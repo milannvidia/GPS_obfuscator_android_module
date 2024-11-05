@@ -37,6 +37,11 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
+    // https://mvnrepository.com/artifact/org.jgrapht/jgrapht-core
+    implementation(libs.jgrapht.core)
+    // https://mvnrepository.com/artifact/net.sf.geographiclib/GeographicLib-Java
+    implementation("net.sf.geographiclib:GeographicLib-Java:2.0")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
