@@ -1,77 +1,75 @@
 package be.kuleuven.milanschollier.safegps
 
 import android.Manifest
-import android.app.Service
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.IBinder
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
-import androidx.activity.*
+import com.google.android.gms.location.Priority
 import androidx.activity.ComponentActivity
-import androidx.core.app.ActivityCompat
+import androidx.lifecycle.LifecycleObserver
+import androidx.lifecycle.OnLifecycleEvent
 import java.io.File
 
 
-class LocationManager private constructor() {
+class LocationManager private constructor(private var activity: ComponentActivity):
+    LifecycleObserver {
     companion object {
         @Volatile
         private var instance: LocationManager? = null
-        private var fileDirectory: File? = null
-        fun getInstance(context: Context) =
+        fun getInstance(activity: ComponentActivity) =
             instance ?: synchronized(this){
-                instance ?: LocationManager().also {
+                instance ?: LocationManager(activity).also {
                     instance = it
-                    fileDirectory=context.filesDir
                 }
             }
     }
-
+    private var x=activity.lifecycle.addObserver(this)
     private var finePermission: Boolean = false
     private var coarsePermission: Boolean = false
-    private var foregroundPermission: Boolean = false
-    private var priority: Int = 0
-    private var interval: Long = 0
+    private var foregroundService: Boolean = false
+    private var priority: Int = Priority.PRIORITY_HIGH_ACCURACY
+    private var interval: Long = Long.MAX_VALUE
     private var locationObfuscator: LocationObfuscator? = null
 
-    fun setFinePermission(context: Context, activity: ComponentActivity, permission: Boolean):Boolean {
-        this.finePermission = ContextCompat.checkSelfPermission(
-            context,
+    @OnLifecycleEvent(androidx.lifecycle.Lifecycle.Event.ON_DESTROY)
+    fun onDestroy() {
+        locationObfuscator?.store(activity.filesDir)
+    }
+
+    fun getFinePermission(activity: ComponentActivity, askIfNecessary: Boolean=false):Boolean {
+        this.finePermission = activity.checkSelfPermission(
             Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
         if (this.finePermission) return true
-
-        if (permission) {
+        if (askIfNecessary) {
             activity.registerForActivityResult(
                 ActivityResultContracts.RequestMultiplePermissions()
             ) { permissions ->
-                //TODO: Check if permissions are granted
-                println(permissions)
+                finePermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+                coarsePermission = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
             }.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))
         }
         return this.finePermission
     }
 
-    fun setCoarsePermission(context: Context, activity: ComponentActivity, permission: Boolean):Boolean {
-        this.coarsePermission = ContextCompat.checkSelfPermission(
-            context,
+    fun getCoarsePermission(activity: ComponentActivity, askIfNecessary: Boolean=false):Boolean {
+        this.coarsePermission = activity.checkSelfPermission(
             Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
         if (this.coarsePermission) return true
 
-        if (permission) {
+        if (askIfNecessary) {
             activity.registerForActivityResult(
                 ActivityResultContracts.RequestPermission()
-            ) {
-                res -> this.coarsePermission=res
+            ) {res ->
+                this.coarsePermission=res
             }.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
         return this.coarsePermission
     }
 
-    fun setForegroundPermission(permission: Boolean) {
-        this.foregroundPermission = permission
+    fun setForegroundService(permission: Boolean) {
+        this.foregroundService = permission
     }
 
     fun setPriority(priority: Int) {
@@ -85,14 +83,12 @@ class LocationManager private constructor() {
     fun setLocationObfuscator(locationObfuscator: LocationObfuscator) {
         this.locationObfuscator = locationObfuscator
     }
-
-
-}
-
-
-class LocationService : Service() {
-    override fun onBind(p0: Intent?): IBinder? {
-        TODO("Not yet implemented")
+    fun removeLocationObfuscator(){
+        this.locationObfuscator = null
     }
 
+
+
 }
+
+

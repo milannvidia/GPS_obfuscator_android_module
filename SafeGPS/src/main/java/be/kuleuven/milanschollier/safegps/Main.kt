@@ -1,4 +1,4 @@
-package be.kuleuven.milanschollier.safegps
+//package be.kuleuven.milanschollier.safegps
 
 import net.sf.geographiclib.Geodesic
 import net.sf.geographiclib.GeodesicMask
