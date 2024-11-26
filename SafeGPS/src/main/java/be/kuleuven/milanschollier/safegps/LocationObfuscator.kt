@@ -24,12 +24,14 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
     companion object {
         @Volatile
         private var instance: LocationObfuscatorV1? = null
-        fun getInstance(file: File)=
-            instance ?: synchronized(this) {
+        fun getInstance(filesDir: File): LocationObfuscatorV1 {
+            return instance ?: synchronized(this) {
                 instance ?: LocationObfuscatorV1().also {
                     instance = it
-                }.load(file)
+                    instance!!.load(filesDir)
+                }
             }
+        }
 
     }
     private val historyBlobs= mutableListOf<PrivacyBlob>()

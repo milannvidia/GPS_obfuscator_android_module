@@ -17,9 +17,12 @@ okhttp = "4.11.0"
 runtimeLivedata = "1.7.4"
 playServicesLocation = "21.3.0"
 activity = "1.9.3"
+workRuntime = "2.9.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-work-runtime = { module = "androidx.work:work-runtime", version.ref = "workRuntime" }
+androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "workRuntime" }
 geographiclib-java = { module = "net.sf.geographiclib:GeographicLib-Java", version.ref = "geographiclibJava" }
 gt-main = { module = "org.geotools:gt-main", version.ref = "gtMain" }
 jgrapht-core = { module = "org.jgrapht:jgrapht-core", version.ref = "jgraphtCore" }
