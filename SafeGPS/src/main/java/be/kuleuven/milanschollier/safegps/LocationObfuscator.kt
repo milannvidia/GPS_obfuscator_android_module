@@ -1,6 +1,5 @@
 package be.kuleuven.milanschollier.safegps
 
-import android.content.Context
 import android.location.Location
 import net.sf.geographiclib.Geodesic
 import net.sf.geographiclib.GeodesicMask
@@ -14,9 +13,10 @@ typealias Timestamp = Long
 typealias LatLonTs = Triple<Double, Double, Timestamp> // lon, lat, timestamp
 
 interface LocationObfuscator {
-    fun perturbLocation(location: Location): LatLonTs
+    fun obfuscateLocation(location: Location): LatLonTs
     fun load(filesDir: File)
     fun store(filesDir: File)
+    fun clearStorage(filesDir: File)
 }
 
 class LocationObfuscatorV1 private constructor() : LocationObfuscator {
@@ -35,23 +35,28 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
 
     }
     private val historyBlobs= mutableListOf<PrivacyBlob>()
-    private val settings:Settings = Pair(100.0, 3_600_000)
+    private var _settings: Settings = Pair(100.0, 3_600_000)
+    private var settings: Settings
+        get() = _settings
+        set(value) {
+            _settings = value
+        }
+
     private val perturbedLocationCache = mutableListOf<LatLonTs>()
     val angleSampler = { nextDouble(0.0, 2 * PI) }
     val radiusSampler = { nextDouble(0.0, settings.first) }
 
-    override fun perturbLocation(location: Location): LatLonTs {
+    override fun obfuscateLocation(location: Location): LatLonTs {
         val lat = location.latitude
         val lon = location.longitude
         val ts:Timestamp = location.time
-
         val lastLocation = perturbedLocationCache.lastOrNull()?:LatLonTs(0.0,0.0,0)
-        if (ts - lastLocation.third < settings.second) {
+        if (ts - lastLocation.third < settings.second*1000) {
             return lastLocation
         }
 
         //Voor jitter tegen te gaan als in in de buurt van vorige locatie die privacy blob doorsturen ongeacht andere dichter is
-        if(Geodesic.WGS84.Inverse(lastLocation.first,lastLocation.second,lat,lon, GeodesicMask.DISTANCE).s12 > settings.first){
+        if(Geodesic.WGS84.Inverse(lastLocation.first,lastLocation.second,lat,lon, GeodesicMask.DISTANCE).s12 < settings.first){
             return LatLonTs(lastLocation.first,lastLocation.second,ts)
         }
         
@@ -91,6 +96,12 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
     override fun store(filesDir:File) {
         saveHistoryBlobs(File(filesDir,"LocationObfuscatorV1_historyBlobs.txt"))
         saveSettings(File(filesDir,"LocationObfuscatorV1_settings.txt"))
+    }
+
+    override fun clearStorage(filesDir: File) {
+        File(filesDir,"LocationObfuscatorV1_historyBlobs.txt").delete()
+        File(filesDir,"LocationObfuscatorV1_settings.txt").delete()
+        historyBlobs.clear()
     }
 
     private fun loadHistoryBlobs(file: File): List<PrivacyBlob> {
