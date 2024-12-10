@@ -25,6 +25,7 @@ class LocationWorker(context: Context, workerParams: WorkerParameters,
     override fun doWork(): Result {
         return try{
             println("doWork")
+            val startTimestamp = System.currentTimeMillis()
             locationClient = LocationServices.getFusedLocationProviderClient(applicationContext)
             if (locationManager.foregroundService) {
 
@@ -41,8 +42,11 @@ class LocationWorker(context: Context, workerParams: WorkerParameters,
                 setForegroundAsync(foregroundInfo)
             }
             startLocationUpdates()
-            if(locationManager.foregroundService) Thread.sleep(Long.MAX_VALUE)
-            else Thread.sleep(locationManager.maxRuntime)
+            while(locationManager.running.value==true){
+                Thread.sleep(1000)
+                if(!locationManager.foregroundService && System.currentTimeMillis()-startTimestamp>locationManager.maxRuntime) break
+            }
+            println("doWork done")
             Result.success()
         }catch (e:Exception){
             e.printStackTrace()

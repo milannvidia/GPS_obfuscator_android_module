@@ -77,10 +77,19 @@ class LocationManager private constructor(private var activity: ComponentActivit
     private var _interval: Long = 2*60*1000
     private var _locationObfuscator: LocationObfuscator? = null
     private var _callback: ((LatLonTs) -> Unit)? = null
+    private var _debugCallback: ((LatLonTs,LatLonTs) -> Unit)? = null
+    private var _debug: Boolean = false
+
+    var debug: Boolean
+        get() = _debug
+        set(value) {
+            if(_debug) println("debug: $value")
+            _debug = value
+        }
     var foregroundService: Boolean
         get() = _foregroundService
         set(value) {
-            println("foregroundService: $value")
+            if(_debug) println("foregroundService: $value")
             _foregroundService = value
         }
     var priority: Int
@@ -90,7 +99,7 @@ class LocationManager private constructor(private var activity: ComponentActivit
                 Priority.PRIORITY_LOW_POWER!=value &&
                 Priority.PRIORITY_BALANCED_POWER_ACCURACY!=value &&
                 Priority.PRIORITY_PASSIVE !=value) return
-            println("priority: $value")
+            if(_debug) println("priority: $value")
             _priority = value
         }
     var maxRuntime: Long
@@ -99,7 +108,7 @@ class LocationManager private constructor(private var activity: ComponentActivit
             if(value<0) return
             var res=value
             if(res>10*60*1000) res = 10*60*1000
-            println("maxRuntime: $res")
+            if(_debug) println("maxRuntime: $res")
             _maxRuntime = res
         }
     var interval: Long
@@ -109,50 +118,56 @@ class LocationManager private constructor(private var activity: ComponentActivit
             var res=value
             if(res<120000 && _finePermission.value==false) res=120000
 
-            println("interval: $res")
+            if(_debug) println("interval: $res")
             _interval = res
         }
     var locationObfuscator: LocationObfuscator?
         get() = _locationObfuscator
         set(value) {
-            println("locationObfuscator set")
+            if(_debug) println("locationObfuscator set")
             _locationObfuscator = value
         }
     var callback: ((LatLonTs) -> Unit)?
         get() = _callback
         set(value) {
-            println("callback set")
+            if(_debug) println("callback set")
             _callback = value
         }
+    var debugCallback: ((LatLonTs,LatLonTs) -> Unit)?
+        get() = null
+        set(value) {
+            if(_debug) println("debugCallback set")
+            _debugCallback = value
+        }
     override fun onCreate(owner: LifecycleOwner) {
-        println("onCreate")
+        if(_debug) println("onCreate")
         getFinePermission(false)
         getCoarsePermission(false)
     }
     override fun onStart(owner: LifecycleOwner) {
-        println("onStart")
+        if(_debug) println("onStart")
     }
     override fun onResume(owner: LifecycleOwner) {
-        println("onResume")
+        if(_debug) println("onResume")
     }
     override fun onPause(owner: LifecycleOwner) {
-        println("onPause")
+        if(_debug) println("onPause")
     }
     override fun onStop(owner: LifecycleOwner) {
-        println("onStop")
+        if(_debug) println("onStop")
         locationObfuscator?.store(activity.filesDir)
     }
     override fun onDestroy(owner: LifecycleOwner) {
-        println("onDestroy")
+        if(_debug) println("onDestroy")
     }
 
     fun getFinePermission(askIfNecessary: Boolean=false):Boolean {
-        println("getFinePermission")
+        if(_debug) println("getFinePermission")
         this._finePermission.value = activity.checkSelfPermission(
             Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
         if (this._finePermission.value==true) {
-            println("already granted")
+            if(_debug) println("already granted")
             return true
         }
 
@@ -167,12 +182,12 @@ class LocationManager private constructor(private var activity: ComponentActivit
     }
 
     fun getCoarsePermission(askIfNecessary: Boolean=false):Boolean {
-        println("getCoarsePermission")
+        if(_debug) println("getCoarsePermission")
         this._coarsePermission.value = activity.checkSelfPermission(
             Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
         if (this._coarsePermission.value==true) {
-            println("already granted")
+            if(_debug) println("already granted")
             return true
         }
 
@@ -187,20 +202,25 @@ class LocationManager private constructor(private var activity: ComponentActivit
     }
 
     fun useCallback(location: Location) {
-        println("useCallback")
+        if(_debug) println("useCallback")
         if (_locationObfuscator==null) {
             _callback?.invoke(Triple(location.latitude,location.longitude,location.time))
         }else{
-            _callback?.invoke(_locationObfuscator!!.obfuscateLocation(location))
+            val obfuscatedLocation=this._locationObfuscator!!.obfuscateLocation(location)
+            if(_debug && _debugCallback!=null){
+                _debugCallback!!.invoke(Triple(location.latitude,location.longitude,location.time),obfuscatedLocation)
+            }
+            _callback?.invoke(obfuscatedLocation)
         }
+
     }
     fun startTracking(){
-        println("startTracking")
+        if(_debug) println("startTracking")
         if(_running.value==true){
-            println("already running, so stopping")
+            if(_debug) println("already running, so stopping")
             stopTracking()
         }
-        if (_callback == null) return
+        if (_callback == null && _debugCallback==null) return
         _locationObfuscator?.load(activity.filesDir)
         if (_foregroundService){
             setupNotificationChannel()
@@ -210,7 +230,7 @@ class LocationManager private constructor(private var activity: ComponentActivit
                 "location",
                 ExistingWorkPolicy.REPLACE,
                 worker)
-            println("started foreground service")
+            if(_debug) println("started foreground service")
         }else {
             val worker= PeriodicWorkRequestBuilder<LocationWorker>(
                     max(_interval,MIN_PERIODIC_INTERVAL_MILLIS), TimeUnit.MILLISECONDS
@@ -220,7 +240,7 @@ class LocationManager private constructor(private var activity: ComponentActivit
                 "location",
                 ExistingPeriodicWorkPolicy.UPDATE,
                 worker)
-            println("started background service")
+            if(_debug) println("started background service")
         }
         _running.value=true
     }
@@ -238,12 +258,12 @@ class LocationManager private constructor(private var activity: ComponentActivit
         notificationManager.createNotificationChannel(channel)
     }
     fun stopTracking(){
-        println("stopTracking")
+        if(_debug) println("stopTracking")
         WorkManager.getInstance(activity).cancelUniqueWork("location")
         _running.value=false
     }
     fun getLocation(param: (LatLonTs) -> Unit) {
-        println("getLocation")
+        if(_debug) println("getLocation")
         thread {
             if (ActivityCompat.checkSelfPermission(
                     activity,

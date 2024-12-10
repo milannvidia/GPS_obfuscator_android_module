@@ -1,6 +1,7 @@
 package be.kuleuven.milanschollier.testApp
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -45,9 +46,12 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.Date
+import java.util.concurrent.CountDownLatch
+import kotlin.concurrent.thread
 
 
 class MainActivity : ComponentActivity() {
@@ -60,6 +64,8 @@ class MainActivity : ComponentActivity() {
     )
     init {
         locationManager.locationObfuscator= LocationObfuscatorV1.getInstance()
+        locationManager.debug=true
+        locationManager.debugCallback={original,obfuscated-> sendLocationToServer(original,obfuscated)}
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -233,7 +239,6 @@ class MainActivity : ComponentActivity() {
                         LaunchedEffect(LocationManager) {
                             locationManager.callback={ location ->
                                 results += "${location.first}, ${location.second}, ${Date(location.third)} \n"
-                                sendLocationToServer(location)
                             }
                         }
                         OutlinedTextField(
@@ -253,17 +258,15 @@ class MainActivity : ComponentActivity() {
         sendBlobsToServer()
         super.onStop()
     }
-
     @SuppressLint("HardwareIds")
-    fun sendLocationToServer(location: LatLonTs){
+    fun sendLocationToServer(realLocation: LatLonTs, obfuscatedLocation:LatLonTs){
          val jsonBody= JSONObject()
             .put("finePermission",this.locationManager.getFinePermission(false))
             .put("foreGround",this.locationManager.foregroundService)
             .put("priority",this.locationManager.priority)
             .put("user", Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID))
-            .put("latitude",location.first)
-            .put("longitude",location.second)
-            .put("time",location.third)
+            .put("realLocation",realLocation)
+            .put("obfuscatedLocation",obfuscatedLocation)
 
         println(jsonBody.toString())
         Thread{
@@ -276,12 +279,16 @@ class MainActivity : ComponentActivity() {
                 val response=client.newCall(request).execute()
                 if (response.isSuccessful) {
                     // Handle successful response
-                    println("Response: ${response.body?.string()}")
+                    retryPendingLocation(this)
                 } else {
+                    savePendingLocation(this,jsonBody)
                     // Handle error response
                     println("Error: ${response.code} - ${response.message}")
+                    println("response fails error")
                 }
             }catch (e: IOException){
+                savePendingLocation(this,jsonBody)
+                println("try error")
                 println("Error: ${e.message}")
             }
 
@@ -292,7 +299,7 @@ class MainActivity : ComponentActivity() {
     fun sendBlobsToServer(){
         val jsonBody= JSONObject()
             .put("user", Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID))
-            .put("blobs",locationObfuscator.getHistoryBlobs())
+            .put("blobs",(locationManager.locationObfuscator as LocationObfuscatorV1).getHistoryBlobs())
 
         println(jsonBody.toString())
         Thread{
@@ -306,15 +313,86 @@ class MainActivity : ComponentActivity() {
                 if (response.isSuccessful) {
                     // Handle successful response
                     println("Response: ${response.body?.string()}")
+                    retryPendingBlob(this)
                 } else {
                     // Handle error response
                     println("Error: ${response.code} - ${response.message}")
+                    savePendingBlob(this,jsonBody)
                 }
             }catch (e: IOException){
+                savePendingBlob(this,jsonBody)
                 println("Error: ${e.message}")
             }
-
         }.start()
     }
 
+    private fun savePendingLocation(context: Context, jsonBody: JSONObject){
+        val sharedPreferences =context.getSharedPreferences("pendingLocation", Context.MODE_PRIVATE)
+        val editor = sharedPreferences.edit()
+        val pendingLocation = sharedPreferences.getString("pendingLocation", "[]")
+        val locationArray = JSONArray(pendingLocation)
+        locationArray.put(jsonBody)
+        editor.putString("pendingLocation", locationArray.toString())
+        editor.apply()
+    }
+
+    private fun retryPendingLocation(context: Context) {
+        val sharedPreferences =context.getSharedPreferences("pendingLocation", Context.MODE_PRIVATE)
+        val pendingLocation = sharedPreferences.getString("pendingLocation", "[]")
+        val locationArray = JSONArray(pendingLocation)
+        val failedArray= sendArray(locationArray,"https://masterproefmilanschollier.azurewebsites.net/location")
+        val editor = sharedPreferences.edit()
+        editor.putString("pendingLocation", failedArray.toString())
+        editor.apply()
+    }
+
+    private fun savePendingBlob(context: Context, jsonBody: JSONObject) {
+        val sharedPreferences =context.getSharedPreferences("pendingBlob", Context.MODE_PRIVATE)
+        val editor = sharedPreferences.edit()
+        val pendingBlob = sharedPreferences.getString("pendingBlob", "[]")
+        val blobArray = JSONArray(pendingBlob)
+        blobArray.put(jsonBody)
+        editor.putString("pendingBlob", blobArray.toString())
+        editor.apply()
+    }
+
+    private fun retryPendingBlob(context: Context) {
+        val sharedPreferences =context.getSharedPreferences("pendingBlob", Context.MODE_PRIVATE)
+        val pendingBlob = sharedPreferences.getString("pendingBlob", "[]")
+        val blobArray = JSONArray(pendingBlob)
+        val failedArray=sendArray(blobArray,"https://masterproefmilanschollier.azurewebsites.net/blobs")
+        val editor = sharedPreferences.edit()
+        editor.putString("pendingBlob", failedArray.toString())
+        editor.apply()
+    }
+
+    private fun sendArray(array: JSONArray,url: String): JSONArray {
+        val failedArray=JSONArray()
+        val latch = CountDownLatch(array.length())
+        for (i in 0 until array.length()) {
+            val jsonObject = array.getJSONObject(i)
+            thread {
+                try {
+                    val client = OkHttpClient()
+                    val request = Request.Builder()
+                        .url(url)
+                        .post(
+                            jsonObject.toString()
+                                .toRequestBody("application/json;charset=utf-8".toMediaTypeOrNull())
+                        )
+                        .build()
+                    val response = client.newCall(request).execute()
+                    if (!response.isSuccessful) {
+                        failedArray.put(jsonObject)
+                    }
+                }catch (e: IOException){
+                    failedArray.put(jsonObject)
+                }finally {
+                    latch.countDown()
+                }
+            }.start()
+        }
+        latch.await()
+        return failedArray
+    }
 }
