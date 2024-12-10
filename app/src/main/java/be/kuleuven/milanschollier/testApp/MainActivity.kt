@@ -339,7 +339,9 @@ class MainActivity : ComponentActivity() {
         for (i in 0 until array.length()) {
             val jsonObject = array.getJSONObject(i)
             thread {
-                sendToServer(jsonObject, url)
+                if(!sendToServer(jsonObject, url)){
+                    failedArray.put(jsonObject)
+                }
                 latch.countDown()
             }.start()
         }
