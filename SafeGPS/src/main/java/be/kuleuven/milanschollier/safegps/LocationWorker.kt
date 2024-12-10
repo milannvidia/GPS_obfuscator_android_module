@@ -16,15 +16,16 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 
-class LocationWorker(context: Context, workerParams: WorkerParameters,
+class LocationWorker(
+    context: Context, workerParams: WorkerParameters,
 
-) :
-    Worker(context,workerParams) {
-    private val locationManager=LocationManager.getInstance()
+    ) :
+    Worker(context, workerParams) {
+    private val locationManager = LocationManager.getInstance()
     private lateinit var locationClient: FusedLocationProviderClient
     override fun doWork(): Result {
-        return try{
-            println("doWork")
+        return try {
+            if (locationManager.debug) println("doWork")
             val startTimestamp = System.currentTimeMillis()
             locationClient = LocationServices.getFusedLocationProviderClient(applicationContext)
             if (locationManager.foregroundService) {
@@ -38,27 +39,30 @@ class LocationWorker(context: Context, workerParams: WorkerParameters,
                         .setOngoing(true)
                         .build()
 
-                val foregroundInfo = ForegroundInfo(1001,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+                val foregroundInfo =
+                    ForegroundInfo(1001, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
                 setForegroundAsync(foregroundInfo)
             }
             startLocationUpdates()
-            while(locationManager.running.value==true){
+            while (locationManager.running.value == true) {
                 Thread.sleep(1000)
-                if(!locationManager.foregroundService && System.currentTimeMillis()-startTimestamp>locationManager.maxRuntime) break
+                if (!locationManager.foregroundService && System.currentTimeMillis() - startTimestamp > locationManager.maxRuntime) break
             }
-            println("doWork done")
+            if (locationManager.debug) println("doWork done")
             Result.success()
-        }catch (e:Exception){
+        } catch (e: Exception) {
             e.printStackTrace()
             Result.failure()
-        }finally {
+        } finally {
             locationClient.removeLocationUpdates(locationCallback)
         }
     }
+
     private fun startLocationUpdates() {
-        println("startLocationUpdates priority: ${locationManager.priority} interval: ${locationManager.interval}")
-        val locationRequest = LocationRequest.Builder(locationManager.priority, locationManager.interval)
-            .build()
+        if (locationManager.debug) println("startLocationUpdates priority: ${locationManager.priority} interval: ${locationManager.interval}")
+        val locationRequest =
+            LocationRequest.Builder(locationManager.priority, locationManager.interval)
+                .build()
 
         // Check location permissions
         if (ActivityCompat.checkSelfPermission(
@@ -71,24 +75,25 @@ class LocationWorker(context: Context, workerParams: WorkerParameters,
                 Manifest.permission.ACCESS_COARSE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            println("no permission")
+            if (locationManager.debug) println("no permission")
             return
         }
         try {
             locationClient.requestLocationUpdates(
                 locationRequest,
                 locationCallback,
-                if(LocationManager.getInstance().foregroundService) Looper.getMainLooper()
+                if (LocationManager.getInstance().foregroundService) Looper.getMainLooper()
                 else Looper.myLooper()
             )
-            println("Location updates requested successfully")
-        }catch (e:Exception){
-            println("Location updates failed: ${e.message}")
+            if (locationManager.debug) println("Location updates requested successfully")
+        } catch (e: Exception) {
+            if (locationManager.debug) println("Location updates failed: ${e.message}")
             e.printStackTrace()
         }
 
     }
-    private val locationCallback = object : LocationCallback(){
+
+    private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(locationResult: LocationResult) {
             super.onLocationResult(locationResult)
             locationResult.lastLocation?.let { location ->

@@ -55,32 +55,34 @@ import kotlin.concurrent.thread
 
 
 class MainActivity : ComponentActivity() {
-    private val locationManager= LocationManager.getInstance(this)
-    private val priorityOptions= hashMapOf(
+    private val locationManager = LocationManager.getInstance(this)
+    private val priorityOptions = hashMapOf(
         "High Accuracy" to Priority.PRIORITY_HIGH_ACCURACY,
         "Balanced Power Accuracy" to Priority.PRIORITY_BALANCED_POWER_ACCURACY,
         "Low Power" to Priority.PRIORITY_LOW_POWER,
         "Passive" to Priority.PRIORITY_PASSIVE
     )
+
     init {
-        locationManager.locationObfuscator= LocationObfuscatorV1.getInstance()
-        locationManager.debug=true
-        locationManager.debugCallback={original,obfuscated-> sendLocationToServer(original,obfuscated)}
+        locationManager.locationObfuscator = LocationObfuscatorV1.getInstance()
+        locationManager.debug = true
+        locationManager.debugCallback =
+            { original, obfuscated -> sendLocationToServer(original, obfuscated) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            TestAppTheme  {
+            TestAppTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Column(modifier = Modifier.padding(innerPadding)){
+                    Column(modifier = Modifier.padding(innerPadding)) {
                         Text(
                             text = "Dit is een app voor mijn thesis het stuurt continue locatie gegevens door. Bij privacy concerns stuur me zeker een vraag",
                             modifier = Modifier.padding(10.dp)
                         )
                         var expanded by remember { mutableStateOf(false) }
-                        var prioritySelect by remember { mutableStateOf(priorityOptions.entries.first{it.value==locationManager.priority}.key) }
+                        var prioritySelect by remember { mutableStateOf(priorityOptions.entries.first { it.value == locationManager.priority }.key) }
                         Box {
                             Column {
                                 OutlinedTextField(
@@ -96,13 +98,14 @@ class MainActivity : ComponentActivity() {
                                     onDismissRequest = { expanded = false },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    priorityOptions.keys.forEach  { priority ->
+                                    priorityOptions.keys.forEach { priority ->
                                         DropdownMenuItem(
                                             text = { Text(text = priority) },
                                             onClick = {
                                                 expanded = false
-                                                locationManager.priority=priorityOptions.getValue(priority)
-                                                prioritySelect=priority
+                                                locationManager.priority =
+                                                    priorityOptions.getValue(priority)
+                                                prioritySelect = priority
                                             })
                                     }
                                 }
@@ -117,8 +120,8 @@ class MainActivity : ComponentActivity() {
                                     })
                             )
                         }
-                        val finePermission =locationManager.finePermission.observeAsState()
-                        val coarsePermission =locationManager.coarsePermission.observeAsState()
+                        val finePermission = locationManager.finePermission.observeAsState()
+                        val coarsePermission = locationManager.coarsePermission.observeAsState()
                         var intervalValue by remember { mutableStateOf(locationManager.interval.toString()) }
                         OutlinedTextField(
                             value = intervalValue,
@@ -126,40 +129,41 @@ class MainActivity : ComponentActivity() {
                             onValueChange = {
                                 val x: Long
                                 try {
-                                    x=it.toLong()
-                                }catch (e: NumberFormatException){
-                                    intervalValue=0L.toString()
-                                    locationManager.interval=0
+                                    x = it.toLong()
+                                } catch (e: NumberFormatException) {
+                                    intervalValue = 0L.toString()
+                                    locationManager.interval = 0
                                     return@OutlinedTextField
                                 }
-                                locationManager.interval=x
-                                intervalValue=locationManager.interval.toString()
+                                locationManager.interval = x
+                                intervalValue = locationManager.interval.toString()
                             },
-                            modifier= Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth(),
                             label = { Text(text = "interval ms") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         )
-                        var maxRuntimeValue by remember { mutableStateOf((locationManager.maxRuntime/(1000*60)).toString()) }
+                        var maxRuntimeValue by remember { mutableStateOf((locationManager.maxRuntime / (1000 * 60)).toString()) }
                         OutlinedTextField(
                             value = maxRuntimeValue,
                             onValueChange = {
                                 val x: Long
                                 try {
-                                    x=it.toLong()*1000*60
-                                }catch (e: NumberFormatException){
-                                    maxRuntimeValue=0L.toString()
-                                    locationManager.maxRuntime=0
+                                    x = it.toLong() * 1000 * 60
+                                } catch (e: NumberFormatException) {
+                                    maxRuntimeValue = 0L.toString()
+                                    locationManager.maxRuntime = 0
                                     return@OutlinedTextField
                                 }
-                                locationManager.maxRuntime=x
-                                maxRuntimeValue=(locationManager.maxRuntime/(1000*60)).toString()
+                                locationManager.maxRuntime = x
+                                maxRuntimeValue =
+                                    (locationManager.maxRuntime / (1000 * 60)).toString()
                             },
-                            modifier= Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth(),
                             label = { Text(text = "maxRuntime minutes (background)") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         )
                         var foreground by remember { mutableStateOf(locationManager.foregroundService) }
-                        Box{
+                        Box {
                             OutlinedTextField(
                                 value = foreground.toString(),
                                 readOnly = true,
@@ -167,51 +171,55 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.fillMaxWidth(),
                                 label = { Text(text = "foreground") }
                             )
-                            Spacer(modifier = Modifier
-                                .matchParentSize()
-                                .background(Color.Transparent)
-                                .padding(10.dp)
-                                .clickable(onClick = {
-                                    foreground = !foreground
-                                    locationManager.foregroundService = foreground
-                                }))
+                            Spacer(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .background(Color.Transparent)
+                                    .padding(10.dp)
+                                    .clickable(onClick = {
+                                        foreground = !foreground
+                                        locationManager.foregroundService = foreground
+                                    })
+                            )
                         }
                         OutlinedTextField(
                             value = "finePermission: ${finePermission.value} coarsePermission: ${coarsePermission.value}",
                             onValueChange = {},
                             readOnly = true,
-                            modifier= Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth(),
                             label = { Text(text = "Permissionstate") },
                         )
 
                         Row {
-                            Button(onClick ={
-                                locationManager.getCoarsePermission(true)
-                            },
+                            Button(
+                                onClick = {
+                                    locationManager.getCoarsePermission(true)
+                                },
                                 modifier = Modifier
                                     .weight(1f)
                                     .heightIn(64.dp, 64.dp),
-                                enabled = coarsePermission.value==false
+                                enabled = coarsePermission.value == false
                             ) {
                                 Text(text = "Ask Coarse Permission")
                             }
-                            Button(onClick ={
-                                locationManager.getFinePermission(true)
-                            },
+                            Button(
+                                onClick = {
+                                    locationManager.getFinePermission(true)
+                                },
                                 modifier = Modifier
                                     .weight(1f)
                                     .heightIn(64.dp, 64.dp),
-                                enabled = finePermission.value==false
+                                enabled = finePermission.value == false
                             ) {
                                 Text(text = "Ask Fine Permission")
                             }
                         }
                         var results by remember { mutableStateOf("") }
-                        Row{
-                            val running=locationManager.running.observeAsState()
+                        Row {
+                            val running = locationManager.running.observeAsState()
                             Button(
                                 onClick = {
-                                    if(running.value==true) locationManager.stopTracking()
+                                    if (running.value == true) locationManager.stopTracking()
                                     else {
                                         locationManager.startTracking()
                                     }
@@ -219,25 +227,25 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier
                                     .weight(1f)
                                     .heightIn(64.dp, 64.dp)
-                            ){
-                                Text(text = if(running.value==true) "Stop tracking" else "Start tracking")
+                            ) {
+                                Text(text = if (running.value == true) "Stop tracking" else "Start tracking")
                             }
                             Button(
                                 onClick = {
-                                        locationManager.getLocation { x->
-                                            results += "${x.first}, ${x.second}, ${Date(x.third)}\n"
-                                        }
-                                          },
+                                    locationManager.getLocation { x ->
+                                        results += "${x.first}, ${x.second}, ${Date(x.third)}\n"
+                                    }
+                                },
                                 modifier = Modifier
                                     .weight(1f)
                                     .heightIn(64.dp, 64.dp)
-                            ){
+                            ) {
                                 Text(text = "Get location")
                             }
                         }
 
                         LaunchedEffect(LocationManager) {
-                            locationManager.callback={ location ->
+                            locationManager.callback = { location ->
                                 results += "${location.first}, ${location.second}, ${Date(location.third)} \n"
                             }
                         }
@@ -245,7 +253,7 @@ class MainActivity : ComponentActivity() {
                             value = results,
                             onValueChange = {},
                             readOnly = true,
-                            modifier= Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth(),
                             label = { Text(text = "Results") },
                         )
                     }
@@ -258,141 +266,101 @@ class MainActivity : ComponentActivity() {
         sendBlobsToServer()
         super.onStop()
     }
-    @SuppressLint("HardwareIds")
-    fun sendLocationToServer(realLocation: LatLonTs, obfuscatedLocation:LatLonTs){
-         val jsonBody= JSONObject()
-            .put("finePermission",this.locationManager.getFinePermission(false))
-            .put("foreGround",this.locationManager.foregroundService)
-            .put("priority",this.locationManager.priority)
-            .put("user", Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID))
-            .put("realLocation",realLocation)
-            .put("obfuscatedLocation",obfuscatedLocation)
 
-        println(jsonBody.toString())
-        Thread{
-            try {
-                val client= OkHttpClient()
-                val request= Request.Builder()
-                    .url("https://masterproefmilanschollier.azurewebsites.net/location")
-                    .post(jsonBody.toString().toRequestBody("application/json;charset=utf-8".toMediaTypeOrNull()))
-                    .build()
-                val response=client.newCall(request).execute()
-                if (response.isSuccessful) {
-                    // Handle successful response
-                    retryPendingLocation(this)
-                } else {
-                    savePendingLocation(this,jsonBody)
-                    // Handle error response
-                    println("Error: ${response.code} - ${response.message}")
-                    println("response fails error")
-                }
-            }catch (e: IOException){
-                savePendingLocation(this,jsonBody)
-                println("try error")
-                println("Error: ${e.message}")
-            }
-
-        }.start()
-    }
+    //=================================================================================================================================================================
+    // IO
+    //=================================================================================================================================================================
 
     @SuppressLint("HardwareIds")
-    fun sendBlobsToServer(){
-        val jsonBody= JSONObject()
+    fun sendLocationToServer(realLocation: LatLonTs, obfuscatedLocation: LatLonTs) {
+        val jsonBody = JSONObject()
+            .put("finePermission", this.locationManager.getFinePermission(false))
+            .put("foreGround", this.locationManager.foregroundService)
+            .put("priority", this.locationManager.priority)
             .put("user", Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID))
-            .put("blobs",(locationManager.locationObfuscator as LocationObfuscatorV1).getHistoryBlobs())
-
+            .put("realLocation", realLocation)
+            .put("obfuscatedLocation", obfuscatedLocation)
+        val url = "https://masterproefmilanschollier.azurewebsites.net/location"
+        val key = "pendingLocation"
         println(jsonBody.toString())
-        Thread{
-            try {
-                val client= OkHttpClient()
-                val request= Request.Builder()
-                    .url("https://masterproefmilanschollier.azurewebsites.net/blobs")
-                    .post(jsonBody.toString().toRequestBody("application/json;charset=utf-8".toMediaTypeOrNull()))
-                    .build()
-                val response=client.newCall(request).execute()
-                if (response.isSuccessful) {
-                    // Handle successful response
-                    println("Response: ${response.body?.string()}")
-                    retryPendingBlob(this)
-                } else {
-                    // Handle error response
-                    println("Error: ${response.code} - ${response.message}")
-                    savePendingBlob(this,jsonBody)
-                }
-            }catch (e: IOException){
-                savePendingBlob(this,jsonBody)
-                println("Error: ${e.message}")
+        Thread {
+            if (sendToServer(jsonBody, url)) {
+                retryPending(this, key, url)
+            } else {
+                savePending(this, key, jsonBody)
             }
         }.start()
     }
 
-    private fun savePendingLocation(context: Context, jsonBody: JSONObject){
-        val sharedPreferences =context.getSharedPreferences("pendingLocation", Context.MODE_PRIVATE)
+    @SuppressLint("HardwareIds")
+    fun sendBlobsToServer() {
+        val jsonBody = JSONObject()
+            .put("user", Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID))
+            .put(
+                "blobs",
+                (locationManager.locationObfuscator as LocationObfuscatorV1).getHistoryBlobs()
+            )
+        val url = "https://masterproefmilanschollier.azurewebsites.net/blobs"
+        val key = "pendingBlobs"
+        println(jsonBody.toString())
+        Thread {
+            if (sendToServer(jsonBody, url)) {
+                retryPending(this, key, url)
+            } else {
+                savePending(this, key, jsonBody)
+            }
+        }.start()
+    }
+
+    private fun savePending(context: Context, key: String, jsonBody: JSONObject) {
+        val sharedPreferences = context.getSharedPreferences(key, Context.MODE_PRIVATE)
+        val pending = sharedPreferences.getString(key, "[]")
+        val array = JSONArray(pending)
         val editor = sharedPreferences.edit()
-        val pendingLocation = sharedPreferences.getString("pendingLocation", "[]")
-        val locationArray = JSONArray(pendingLocation)
-        locationArray.put(jsonBody)
-        editor.putString("pendingLocation", locationArray.toString())
+        array.put(jsonBody)
+        println(array.toString())
+        editor.putString(key, array.toString())
         editor.apply()
     }
 
-    private fun retryPendingLocation(context: Context) {
-        val sharedPreferences =context.getSharedPreferences("pendingLocation", Context.MODE_PRIVATE)
-        val pendingLocation = sharedPreferences.getString("pendingLocation", "[]")
-        val locationArray = JSONArray(pendingLocation)
-        val failedArray= sendArray(locationArray,"https://masterproefmilanschollier.azurewebsites.net/location")
+    private fun retryPending(context: Context, key: String, url: String) {
+        val sharedPreferences = context.getSharedPreferences(key, Context.MODE_PRIVATE)
+        val pending = sharedPreferences.getString(key, "[]")
+        val array = JSONArray(pending)
+        val failedArray = sendArray(array, url)
         val editor = sharedPreferences.edit()
-        editor.putString("pendingLocation", failedArray.toString())
+        editor.putString(key, failedArray.toString())
         editor.apply()
     }
 
-    private fun savePendingBlob(context: Context, jsonBody: JSONObject) {
-        val sharedPreferences =context.getSharedPreferences("pendingBlob", Context.MODE_PRIVATE)
-        val editor = sharedPreferences.edit()
-        val pendingBlob = sharedPreferences.getString("pendingBlob", "[]")
-        val blobArray = JSONArray(pendingBlob)
-        blobArray.put(jsonBody)
-        editor.putString("pendingBlob", blobArray.toString())
-        editor.apply()
-    }
-
-    private fun retryPendingBlob(context: Context) {
-        val sharedPreferences =context.getSharedPreferences("pendingBlob", Context.MODE_PRIVATE)
-        val pendingBlob = sharedPreferences.getString("pendingBlob", "[]")
-        val blobArray = JSONArray(pendingBlob)
-        val failedArray=sendArray(blobArray,"https://masterproefmilanschollier.azurewebsites.net/blobs")
-        val editor = sharedPreferences.edit()
-        editor.putString("pendingBlob", failedArray.toString())
-        editor.apply()
-    }
-
-    private fun sendArray(array: JSONArray,url: String): JSONArray {
-        val failedArray=JSONArray()
+    private fun sendArray(array: JSONArray, url: String): JSONArray {
+        val failedArray = JSONArray()
         val latch = CountDownLatch(array.length())
         for (i in 0 until array.length()) {
             val jsonObject = array.getJSONObject(i)
             thread {
-                try {
-                    val client = OkHttpClient()
-                    val request = Request.Builder()
-                        .url(url)
-                        .post(
-                            jsonObject.toString()
-                                .toRequestBody("application/json;charset=utf-8".toMediaTypeOrNull())
-                        )
-                        .build()
-                    val response = client.newCall(request).execute()
-                    if (!response.isSuccessful) {
-                        failedArray.put(jsonObject)
-                    }
-                }catch (e: IOException){
-                    failedArray.put(jsonObject)
-                }finally {
-                    latch.countDown()
-                }
+                sendToServer(jsonObject, url)
+                latch.countDown()
             }.start()
         }
         latch.await()
         return failedArray
+    }
+
+    private fun sendToServer(jsonBody: JSONObject, url: String): Boolean {
+        try {
+            val client = OkHttpClient()
+            val request = Request.Builder()
+                .url(url)
+                .post(
+                    jsonBody.toString()
+                        .toRequestBody("application/json;charset=utf-8".toMediaTypeOrNull())
+                )
+                .build()
+            val response = client.newCall(request).execute()
+            return response.isSuccessful
+        } catch (e: IOException) {
+            return false
+        }
     }
 }

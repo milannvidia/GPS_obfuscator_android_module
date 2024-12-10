@@ -25,7 +25,8 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
         }
 
     }
-    private var historyBlobs= mutableListOf<PrivacyBlob>()
+
+    private var historyBlobs = mutableListOf<PrivacyBlob>()
     private var _settings: Settings = Pair(100.0, 3_600_000)
     private var settings: Settings
         get() = _settings
@@ -40,15 +41,22 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
     override fun obfuscateLocation(location: Location): LatLonTs {
         val lat = location.latitude
         val lon = location.longitude
-        val ts:Long = location.time
-        val lastLocation = perturbedLocationCache.lastOrNull()?:LatLonTs(0.0,0.0,0)
-        if (ts - lastLocation.third < settings.second*1000) {
+        val ts: Long = location.time
+        val lastLocation = perturbedLocationCache.lastOrNull() ?: LatLonTs(0.0, 0.0, 0)
+        if (ts - lastLocation.third < settings.second * 1000) {
             return lastLocation
         }
 
         //Voor jitter tegen te gaan als in in de buurt van vorige locatie die privacy blob doorsturen ongeacht andere dichter is
-        if(Geodesic.WGS84.Inverse(lastLocation.first,lastLocation.second,lat,lon, GeodesicMask.DISTANCE).s12 < settings.first){
-            return LatLonTs(lastLocation.first,lastLocation.second,ts)
+        if (Geodesic.WGS84.Inverse(
+                lastLocation.first,
+                lastLocation.second,
+                lat,
+                lon,
+                GeodesicMask.DISTANCE
+            ).s12 < settings.first
+        ) {
+            return LatLonTs(lastLocation.first, lastLocation.second, ts)
         }
 
         val matchedReports = historyBlobs.filter { report ->
@@ -62,36 +70,49 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
         }
         if (matchedReports.isNotEmpty()) {
             val closestReport = matchedReports.minByOrNull { report ->
-                Geodesic.WGS84.Inverse(report.first,report.second,lat,lon, GeodesicMask.DISTANCE).s12
+                Geodesic.WGS84.Inverse(
+                    report.first,
+                    report.second,
+                    lat,
+                    lon,
+                    GeodesicMask.DISTANCE
+                ).s12
             }!!
             perturbedLocationCache.add(LatLonTs(closestReport.first, closestReport.second, ts))
-            if (perturbedLocationCache.size>5 ) perturbedLocationCache.removeAt(0)
+            if (perturbedLocationCache.size > 5) perturbedLocationCache.removeAt(0)
             return LatLonTs(closestReport.first, closestReport.second, ts)
         }
 
         val sampledRadius = radiusSampler()
         val sampledAngle = Math.toDegrees(angleSampler())
-        val res= Geodesic.WGS84.Direct(lat,lon,sampledAngle,sampledRadius)
-        val newHistoryBlob=PrivacyBlob(res.lat2,res.lon2,settings.first)
+        val res = Geodesic.WGS84.Direct(lat, lon, sampledAngle, sampledRadius)
+        val newHistoryBlob = PrivacyBlob(res.lat2, res.lon2, settings.first)
         historyBlobs.add(newHistoryBlob)
         perturbedLocationCache.add(LatLonTs(res.lat2, res.lon2, ts))
-        if (perturbedLocationCache.size>5 ) perturbedLocationCache.removeAt(0)
+        if (perturbedLocationCache.size > 5) perturbedLocationCache.removeAt(0)
         return LatLonTs(res.lat2, res.lon2, ts)
     }
 
     override fun load(filesDir: File) {
-        if(historyBlobs.size==0) historyBlobs.addAll(loadHistoryBlobs(File(filesDir,"LocationObfuscatorV1_historyBlobs.txt")))
-        settings = loadSettings(File(filesDir,"LocationObfuscatorV1_settings.txt"))
+        if (historyBlobs.size == 0) historyBlobs.addAll(
+            loadHistoryBlobs(
+                File(
+                    filesDir,
+                    "LocationObfuscatorV1_historyBlobs.txt"
+                )
+            )
+        )
+        settings = loadSettings(File(filesDir, "LocationObfuscatorV1_settings.txt"))
     }
 
     override fun store(filesDir: File) {
-        saveHistoryBlobs(File(filesDir,"LocationObfuscatorV1_historyBlobs.txt"))
-        saveSettings(File(filesDir,"LocationObfuscatorV1_settings.txt"))
+        saveHistoryBlobs(File(filesDir, "LocationObfuscatorV1_historyBlobs.txt"))
+        saveSettings(File(filesDir, "LocationObfuscatorV1_settings.txt"))
     }
 
     override fun clearStorage(filesDir: File) {
-        File(filesDir,"LocationObfuscatorV1_historyBlobs.txt").delete()
-        File(filesDir,"LocationObfuscatorV1_settings.txt").delete()
+        File(filesDir, "LocationObfuscatorV1_historyBlobs.txt").delete()
+        File(filesDir, "LocationObfuscatorV1_settings.txt").delete()
         historyBlobs.clear()
     }
 
@@ -105,17 +126,20 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
             emptyList()
         }
     }
+
     private fun saveHistoryBlobs(file: File) {
         try {
             file.writeText(historyBlobs.joinToString("\n") { "${it.first},${it.second},${it.third}" })
 
-        }catch (e: IOException){
+        } catch (e: IOException) {
             println("Error: ${e.message}")
         }
     }
+
     fun getHistoryBlobs(): List<PrivacyBlob> {
-        return historyBlobs.map{it.copy()}
+        return historyBlobs.map { it.copy() }
     }
+
     private fun loadSettings(file: File): Settings {
         return if (file.exists()) {
             val (radius, interval) = file.readText().split(",")
@@ -124,10 +148,11 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
             Settings(100.0, 3_600_000)
         }
     }
+
     private fun saveSettings(file: File) {
         try {
             file.writeText("${settings.first},${settings.second}")
-        }catch (e: IOException){
+        } catch (e: IOException) {
             println("Error: ${e.message}")
         }
     }
