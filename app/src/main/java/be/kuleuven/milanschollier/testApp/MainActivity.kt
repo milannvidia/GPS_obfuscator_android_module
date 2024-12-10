@@ -1,6 +1,8 @@
 package be.kuleuven.milanschollier.testApp
 
+import android.annotation.SuppressLint
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -24,7 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
@@ -34,28 +36,34 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.LiveData
+import be.kuleuven.milanschollier.safegps.LatLonTs
 import be.kuleuven.milanschollier.safegps.LocationManager
 import be.kuleuven.milanschollier.safegps.LocationObfuscatorV1
 import be.kuleuven.milanschollier.testApp.ui.theme.TestAppTheme
 import com.google.android.gms.location.Priority
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+import java.io.IOException
 import java.util.Date
-import kotlin.concurrent.thread
 
 
 class MainActivity : ComponentActivity() {
     private val locationManager= LocationManager.getInstance(this)
-    private val componentActivity:ComponentActivity=this
     private val priorityOptions= hashMapOf(
         "High Accuracy" to Priority.PRIORITY_HIGH_ACCURACY,
         "Balanced Power Accuracy" to Priority.PRIORITY_BALANCED_POWER_ACCURACY,
         "Low Power" to Priority.PRIORITY_LOW_POWER,
         "Passive" to Priority.PRIORITY_PASSIVE
     )
+    init {
+        locationManager.locationObfuscator= LocationObfuscatorV1.getInstance()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        locationManager.locationObfuscator=LocationObfuscatorV1.getInstance(this.filesDir)
         enableEdgeToEdge()
         setContent {
             TestAppTheme  {
@@ -118,18 +126,8 @@ class MainActivity : ComponentActivity() {
                                     locationManager.interval=0
                                     return@OutlinedTextField
                                 }
-                                if(x<=0) {
-                                    intervalValue=0L.toString()
-                                    locationManager.interval=0
-                                    return@OutlinedTextField
-                                }
-                                if(x<120000&&finePermission.value==false) {
-                                    intervalValue=120000.toString()
-                                    locationManager.interval=120000
-                                    return@OutlinedTextField
-                                }
-                                intervalValue=x.toString()
                                 locationManager.interval=x
+                                intervalValue=locationManager.interval.toString()
                             },
                             modifier= Modifier.fillMaxWidth(),
                             label = { Text(text = "interval ms") },
@@ -147,18 +145,8 @@ class MainActivity : ComponentActivity() {
                                     locationManager.maxRuntime=0
                                     return@OutlinedTextField
                                 }
-                                if(x<=0) {
-                                    maxRuntimeValue=0L.toString()
-                                    locationManager.maxRuntime=0
-                                    return@OutlinedTextField
-                                }
-                                if(x>10*60*1000) {
-                                    maxRuntimeValue=10.toString()
-                                    locationManager.maxRuntime=10*60*1000
-                                    return@OutlinedTextField
-                                }
-                                maxRuntimeValue=(x/(1000*60)).toString()
                                 locationManager.maxRuntime=x
+                                maxRuntimeValue=(locationManager.maxRuntime/(1000*60)).toString()
                             },
                             modifier= Modifier.fillMaxWidth(),
                             label = { Text(text = "maxRuntime minutes (background)") },
@@ -192,7 +180,7 @@ class MainActivity : ComponentActivity() {
 
                         Row {
                             Button(onClick ={
-                                locationManager.getCoarsePermission( componentActivity,true)
+                                locationManager.getCoarsePermission(true)
                             },
                                 modifier = Modifier
                                     .weight(1f)
@@ -202,7 +190,7 @@ class MainActivity : ComponentActivity() {
                                 Text(text = "Ask Coarse Permission")
                             }
                             Button(onClick ={
-                                locationManager.getFinePermission( componentActivity,true)
+                                locationManager.getFinePermission(true)
                             },
                                 modifier = Modifier
                                     .weight(1f)
@@ -230,12 +218,9 @@ class MainActivity : ComponentActivity() {
                             }
                             Button(
                                 onClick = {
-                                    thread {
-                                        val x= locationManager.getLocation()
-                                        println(x)
-                                        if(x==null) return@thread
-                                        results += "${x.first}, ${x.second}, ${Date(x.third)}\n"
-                                    }
+                                        locationManager.getLocation { x->
+                                            results += "${x.first}, ${x.second}, ${Date(x.third)}\n"
+                                        }
                                           },
                                 modifier = Modifier
                                     .weight(1f)
@@ -245,7 +230,12 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        locationManager.callback={ location -> results += "${location.first}, ${location.second}, ${Date(location.third)} \n" }
+                        LaunchedEffect(LocationManager) {
+                            locationManager.callback={ location ->
+                                results += "${location.first}, ${location.second}, ${Date(location.third)} \n"
+                                sendLocationToServer(location)
+                            }
+                        }
                         OutlinedTextField(
                             value = results,
                             onValueChange = {},
@@ -257,6 +247,74 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onStop() {
+        sendBlobsToServer()
+        super.onStop()
+    }
+
+    @SuppressLint("HardwareIds")
+    fun sendLocationToServer(location: LatLonTs){
+         val jsonBody= JSONObject()
+            .put("finePermission",this.locationManager.getFinePermission(false))
+            .put("foreGround",this.locationManager.foregroundService)
+            .put("priority",this.locationManager.priority)
+            .put("user", Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID))
+            .put("latitude",location.first)
+            .put("longitude",location.second)
+            .put("time",location.third)
+
+        println(jsonBody.toString())
+        Thread{
+            try {
+                val client= OkHttpClient()
+                val request= Request.Builder()
+                    .url("https://masterproefmilanschollier.azurewebsites.net/location")
+                    .post(jsonBody.toString().toRequestBody("application/json;charset=utf-8".toMediaTypeOrNull()))
+                    .build()
+                val response=client.newCall(request).execute()
+                if (response.isSuccessful) {
+                    // Handle successful response
+                    println("Response: ${response.body?.string()}")
+                } else {
+                    // Handle error response
+                    println("Error: ${response.code} - ${response.message}")
+                }
+            }catch (e: IOException){
+                println("Error: ${e.message}")
+            }
+
+        }.start()
+    }
+
+    @SuppressLint("HardwareIds")
+    fun sendBlobsToServer(){
+        val jsonBody= JSONObject()
+            .put("user", Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID))
+            .put("blobs",locationObfuscator.getHistoryBlobs())
+
+        println(jsonBody.toString())
+        Thread{
+            try {
+                val client= OkHttpClient()
+                val request= Request.Builder()
+                    .url("https://masterproefmilanschollier.azurewebsites.net/blobs")
+                    .post(jsonBody.toString().toRequestBody("application/json;charset=utf-8".toMediaTypeOrNull()))
+                    .build()
+                val response=client.newCall(request).execute()
+                if (response.isSuccessful) {
+                    // Handle successful response
+                    println("Response: ${response.body?.string()}")
+                } else {
+                    // Handle error response
+                    println("Error: ${response.code} - ${response.message}")
+                }
+            }catch (e: IOException){
+                println("Error: ${e.message}")
+            }
+
+        }.start()
     }
 
 }

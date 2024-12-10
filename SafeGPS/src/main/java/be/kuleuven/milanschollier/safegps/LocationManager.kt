@@ -1,6 +1,9 @@
 package be.kuleuven.milanschollier.safegps
 
 import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context.NOTIFICATION_SERVICE
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
@@ -24,8 +27,10 @@ import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.tasks.Tasks.await
 import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 import kotlin.math.max
 
+typealias LatLonTs = Triple<Double, Double, Long> // lon, lat, timestamp
 
 class LocationManager private constructor(private var activity: ComponentActivity):DefaultLifecycleObserver{
     companion object {
@@ -81,20 +86,31 @@ class LocationManager private constructor(private var activity: ComponentActivit
     var priority: Int
         get() = _priority
         set(value) {
+            if(Priority.PRIORITY_HIGH_ACCURACY!=value &&
+                Priority.PRIORITY_LOW_POWER!=value &&
+                Priority.PRIORITY_BALANCED_POWER_ACCURACY!=value &&
+                Priority.PRIORITY_PASSIVE !=value) return
             println("priority: $value")
             _priority = value
         }
     var maxRuntime: Long
         get() = _maxRuntime
         set(value) {
-            println("maxRuntime: $value")
-            _maxRuntime = value
+            if(value<0) return
+            var res=value
+            if(res>10*60*1000) res = 10*60*1000
+            println("maxRuntime: $res")
+            _maxRuntime = res
         }
     var interval: Long
         get() = _interval
         set(value) {
-            println("interval: $value")
-            _interval = value
+            if(value<0) return
+            var res=value
+            if(res<120000 && _finePermission.value==false) res=120000
+
+            println("interval: $res")
+            _interval = res
         }
     var locationObfuscator: LocationObfuscator?
         get() = _locationObfuscator
@@ -110,8 +126,8 @@ class LocationManager private constructor(private var activity: ComponentActivit
         }
     override fun onCreate(owner: LifecycleOwner) {
         println("onCreate")
-        getFinePermission(activity,false)
-        getCoarsePermission(activity,false)
+        getFinePermission(false)
+        getCoarsePermission(false)
     }
     override fun onStart(owner: LifecycleOwner) {
         println("onStart")
@@ -130,7 +146,7 @@ class LocationManager private constructor(private var activity: ComponentActivit
         println("onDestroy")
     }
 
-    fun getFinePermission(activity: ComponentActivity, askIfNecessary: Boolean=false):Boolean {
+    fun getFinePermission(askIfNecessary: Boolean=false):Boolean {
         println("getFinePermission")
         this._finePermission.value = activity.checkSelfPermission(
             Manifest.permission.ACCESS_FINE_LOCATION
@@ -150,7 +166,7 @@ class LocationManager private constructor(private var activity: ComponentActivit
         return this._finePermission.value==true
     }
 
-    fun getCoarsePermission(activity: ComponentActivity, askIfNecessary: Boolean=false):Boolean {
+    fun getCoarsePermission(askIfNecessary: Boolean=false):Boolean {
         println("getCoarsePermission")
         this._coarsePermission.value = activity.checkSelfPermission(
             Manifest.permission.ACCESS_COARSE_LOCATION
@@ -171,6 +187,7 @@ class LocationManager private constructor(private var activity: ComponentActivit
     }
 
     fun useCallback(location: Location) {
+        println("useCallback")
         if (_locationObfuscator==null) {
             _callback?.invoke(Triple(location.latitude,location.longitude,location.time))
         }else{
@@ -186,55 +203,75 @@ class LocationManager private constructor(private var activity: ComponentActivit
         if (_callback == null) return
         _locationObfuscator?.load(activity.filesDir)
         if (_foregroundService){
+            setupNotificationChannel()
             val worker=OneTimeWorkRequestBuilder<LocationWorker>()
                 .build()
             WorkManager.getInstance(activity).enqueueUniqueWork(
                 "location",
                 ExistingWorkPolicy.REPLACE,
                 worker)
+            println("started foreground service")
         }else {
             val worker= PeriodicWorkRequestBuilder<LocationWorker>(
-                max(_interval,MIN_PERIODIC_INTERVAL_MILLIS), TimeUnit.MILLISECONDS
-            ).build()
+                    max(_interval,MIN_PERIODIC_INTERVAL_MILLIS), TimeUnit.MILLISECONDS
+                )
+                .build()
             WorkManager.getInstance(activity).enqueueUniquePeriodicWork(
                 "location",
                 ExistingPeriodicWorkPolicy.UPDATE,
                 worker)
+            println("started background service")
         }
         _running.value=true
     }
 
+    private fun setupNotificationChannel(){
+        val channelId = "locationTrackingChannel"
+        val channelName = "Location Tracking"
+        val channelDescription = "Location tracking is active"
+        val notificationManager = activity.getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
+        // Create notification channel if not already created
+        val channel = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_LOW).apply {
+            description = channelDescription
+        }
+        notificationManager.createNotificationChannel(channel)
+    }
     fun stopTracking(){
         println("stopTracking")
         WorkManager.getInstance(activity).cancelUniqueWork("location")
         _running.value=false
     }
-    fun getLocation(): LatLonTs? {
+    fun getLocation(param: (LatLonTs) -> Unit) {
         println("getLocation")
-        if (ActivityCompat.checkSelfPermission(
-                activity,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
-            &&
-            ActivityCompat.checkSelfPermission(
-                activity,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            println("no permission")
-            return null
-        }
-
-        val locationClient: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(activity)
-        val request=locationClient.getCurrentLocation(this.priority, null)
-            .addOnFailureListener {
-                e -> println(e)
+        thread {
+            if (ActivityCompat.checkSelfPermission(
+                    activity,
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                ) != PackageManager.PERMISSION_GRANTED
+                &&
+                ActivityCompat.checkSelfPermission(
+                    activity,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                println("no permission")
+                return@thread
             }
-        await(request)
-        val res= request.result ?: return null
-        _locationObfuscator?.load(activity.filesDir)
-        return this._locationObfuscator?.obfuscateLocation(res)
+            val locationClient: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(activity)
+            val request=locationClient.getCurrentLocation(this.priority, null)
+                .addOnFailureListener {
+                        e -> println(e)
+                }
+            await(request)
+            val res= request.result ?: return@thread
+            if (_locationObfuscator==null) {
+                param(Triple(res.latitude,res.longitude,res.time))
+            }else{
+                _locationObfuscator?.load(activity.filesDir)
+                param(this._locationObfuscator!!.obfuscateLocation(res))
+            }
+        }
     }
 
 }

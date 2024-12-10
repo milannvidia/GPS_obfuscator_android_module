@@ -1,9 +1,9 @@
 //package be.kuleuven.milanschollier.safegps
-
-import net.sf.geographiclib.Geodesic
-import net.sf.geographiclib.GeodesicMask
-import kotlin.math.PI
-import kotlin.random.Random.Default.nextDouble
+//
+//import net.sf.geographiclib.Geodesic
+//import net.sf.geographiclib.GeodesicMask
+//import kotlin.math.PI
+//import kotlin.random.Random.Default.nextDouble
 
 
 //typealias FeatureSequence = kotlin.Pair<List<List<Double>>, Double>

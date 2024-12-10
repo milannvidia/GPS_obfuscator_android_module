@@ -1,13 +1,10 @@
 package be.kuleuven.milanschollier.safegps
 
 import android.Manifest
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
-import android.location.Location
-import androidx.activity.ComponentActivity
+import android.os.Looper
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.work.ForegroundInfo
@@ -24,32 +21,38 @@ class LocationWorker(context: Context, workerParams: WorkerParameters,
 ) :
     Worker(context,workerParams) {
     private val locationManager=LocationManager.getInstance()
-    private val locationClient: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(context)
-
+    private lateinit var locationClient: FusedLocationProviderClient
     override fun doWork(): Result {
-        try{
+        return try{
+            println("doWork")
+            locationClient = LocationServices.getFusedLocationProviderClient(applicationContext)
             if (locationManager.foregroundService) {
 
                 val notification =
                     NotificationCompat.Builder(applicationContext, "locationTrackingChannel")
                         .setContentTitle("Location Tracking")
+                        .setTicker("Location Tracking")
                         .setContentText("Tracking your location in the background")
                         .setSmallIcon(R.drawable.ic_launcher_background)
+                        .setOngoing(true)
                         .build()
 
-                val foregroundInfo = ForegroundInfo(1, notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+                val foregroundInfo = ForegroundInfo(1001,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
                 setForegroundAsync(foregroundInfo)
             }
             startLocationUpdates()
-            Thread.sleep(locationManager.maxRuntime)
-            return Result.success()
+            if(locationManager.foregroundService) Thread.sleep(Long.MAX_VALUE)
+            else Thread.sleep(locationManager.maxRuntime)
+            Result.success()
         }catch (e:Exception){
-            return Result.failure()
+            e.printStackTrace()
+            Result.failure()
         }finally {
             locationClient.removeLocationUpdates(locationCallback)
         }
     }
     private fun startLocationUpdates() {
+        println("startLocationUpdates priority: ${locationManager.priority} interval: ${locationManager.interval}")
         val locationRequest = LocationRequest.Builder(locationManager.priority, locationManager.interval)
             .build()
 
@@ -67,16 +70,24 @@ class LocationWorker(context: Context, workerParams: WorkerParameters,
             println("no permission")
             return
         }
-        locationClient.requestLocationUpdates(
-            locationRequest,
-            locationCallback,
-            null
-        )
+        try {
+            locationClient.requestLocationUpdates(
+                locationRequest,
+                locationCallback,
+                if(LocationManager.getInstance().foregroundService) Looper.getMainLooper()
+                else Looper.myLooper()
+            )
+            println("Location updates requested successfully")
+        }catch (e:Exception){
+            println("Location updates failed: ${e.message}")
+            e.printStackTrace()
+        }
+
     }
     private val locationCallback = object : LocationCallback(){
         override fun onLocationResult(locationResult: LocationResult) {
-            val location: Location? = locationResult.lastLocation
-            if (location != null) {
+            super.onLocationResult(locationResult)
+            locationResult.lastLocation?.let { location ->
                 locationManager.useCallback(location)
             }
         }
