@@ -42,7 +42,38 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
         val lat = location.latitude
         val lon = location.longitude
         val ts: Long = location.time
+
+        val matchedReports = historyBlobs.filter { report ->
+            Geodesic.WGS84.Inverse(
+                report.first,
+                report.second,
+                lat,
+                lon,
+                GeodesicMask.DISTANCE
+            ).s12 < report.third
+        }
+
+        val blob: PrivacyBlob
+        if (matchedReports.isEmpty()) {
+            val sampledRadius = radiusSampler()
+            val sampledAngle = Math.toDegrees(angleSampler())
+            val res = Geodesic.WGS84.Direct(lat, lon, sampledAngle, sampledRadius)
+            blob = PrivacyBlob(res.lat2, res.lon2, settings.first)
+            historyBlobs.add(blob)
+        } else {
+            blob = matchedReports.minBy { report ->
+                Geodesic.WGS84.Inverse(
+                    report.first,
+                    report.second,
+                    lat,
+                    lon,
+                    GeodesicMask.DISTANCE
+                ).s12
+            }
+        }
+
         val lastLocation = perturbedLocationCache.lastOrNull() ?: LatLonTs(0.0, 0.0, 0)
+
         if (ts - lastLocation.third < settings.second * 1000) {
             return lastLocation
         }
@@ -59,38 +90,9 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
             return LatLonTs(lastLocation.first, lastLocation.second, ts)
         }
 
-        val matchedReports = historyBlobs.filter { report ->
-            Geodesic.WGS84.Inverse(
-                report.first,
-                report.second,
-                lat,
-                lon,
-                GeodesicMask.DISTANCE
-            ).s12 < report.third
-        }
-        if (matchedReports.isNotEmpty()) {
-            val closestReport = matchedReports.minByOrNull { report ->
-                Geodesic.WGS84.Inverse(
-                    report.first,
-                    report.second,
-                    lat,
-                    lon,
-                    GeodesicMask.DISTANCE
-                ).s12
-            }!!
-            perturbedLocationCache.add(LatLonTs(closestReport.first, closestReport.second, ts))
-            if (perturbedLocationCache.size > 5) perturbedLocationCache.removeAt(0)
-            return LatLonTs(closestReport.first, closestReport.second, ts)
-        }
-
-        val sampledRadius = radiusSampler()
-        val sampledAngle = Math.toDegrees(angleSampler())
-        val res = Geodesic.WGS84.Direct(lat, lon, sampledAngle, sampledRadius)
-        val newHistoryBlob = PrivacyBlob(res.lat2, res.lon2, settings.first)
-        historyBlobs.add(newHistoryBlob)
-        perturbedLocationCache.add(LatLonTs(res.lat2, res.lon2, ts))
+        perturbedLocationCache.add(LatLonTs(blob.first, blob.second, ts))
         if (perturbedLocationCache.size > 5) perturbedLocationCache.removeAt(0)
-        return LatLonTs(res.lat2, res.lon2, ts)
+        return LatLonTs(blob.first, blob.second, ts)
     }
 
     override fun load(filesDir: File) {
@@ -165,6 +167,5 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
             println("Error: ${e.message}")
         }
     }
-
 
 }
