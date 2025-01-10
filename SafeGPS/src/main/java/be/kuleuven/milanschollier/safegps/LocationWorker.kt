@@ -25,7 +25,7 @@ class LocationWorker(
     private lateinit var locationClient: FusedLocationProviderClient
     override fun doWork(): Result {
         return try {
-            if (locationManager.debug) println("doWork")
+            locationManager.logDebug("doWork", LogLevel.VERBOSE)
             val startTimestamp = System.currentTimeMillis()
             locationClient = LocationServices.getFusedLocationProviderClient(applicationContext)
             if (locationManager.foregroundService) {
@@ -48,18 +48,24 @@ class LocationWorker(
                 Thread.sleep(1000)
                 if (!locationManager.foregroundService && System.currentTimeMillis() - startTimestamp > locationManager.maxRuntime) break
             }
-            if (locationManager.debug) println("doWork done")
+            locationManager.logDebug("doWork done", LogLevel.VERBOSE)
+            locationClient.removeLocationUpdates(locationCallback)
             Result.success()
         } catch (e: Exception) {
+            locationManager.logDebug("doWork failed: ${e.message}", LogLevel.ERROR)
             e.printStackTrace()
-            Result.failure()
-        } finally {
             locationClient.removeLocationUpdates(locationCallback)
+            Result.retry()
         }
+    }
+    override fun onStopped() {
+        super.onStopped()
+        locationManager.logDebug("do work stopped", LogLevel.VERBOSE)
+        locationClient.removeLocationUpdates(locationCallback)
     }
 
     private fun startLocationUpdates() {
-        if (locationManager.debug) println("startLocationUpdates priority: ${locationManager.priority} interval: ${locationManager.interval}")
+        locationManager.logDebug("startLocationUpdates priority: ${locationManager.priority} interval: ${locationManager.interval}", LogLevel.VERBOSE)
         val locationRequest =
             LocationRequest.Builder(locationManager.priority, locationManager.interval)
                 .build()
@@ -75,7 +81,7 @@ class LocationWorker(
                 Manifest.permission.ACCESS_COARSE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            if (locationManager.debug) println("no permission")
+            locationManager.logDebug("no permission", LogLevel.ERROR)
             return
         }
         try {
@@ -85,9 +91,9 @@ class LocationWorker(
                 if (LocationManager.getInstance().foregroundService) Looper.getMainLooper()
                 else Looper.myLooper()
             )
-            if (locationManager.debug) println("Location updates requested successfully")
+            locationManager.logDebug("Location updates requested successfully", LogLevel.VERBOSE)
         } catch (e: Exception) {
-            if (locationManager.debug) println("Location updates failed: ${e.message}")
+            locationManager.logDebug("Location updates failed: ${e.message}", LogLevel.ERROR)
             e.printStackTrace()
         }
 

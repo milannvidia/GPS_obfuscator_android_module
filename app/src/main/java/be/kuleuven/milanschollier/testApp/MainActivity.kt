@@ -40,8 +40,10 @@ import androidx.compose.ui.unit.dp
 import be.kuleuven.milanschollier.safegps.LatLonTs
 import be.kuleuven.milanschollier.safegps.LocationManager
 import be.kuleuven.milanschollier.safegps.LocationObfuscatorV1
+import be.kuleuven.milanschollier.safegps.LogLevel
 import be.kuleuven.milanschollier.testApp.ui.theme.TestAppTheme
 import com.google.android.gms.location.Priority
+import kotlinx.coroutines.CompletableDeferred
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -65,7 +67,7 @@ class MainActivity : ComponentActivity() {
 
     init {
         locationManager.locationObfuscator = LocationObfuscatorV1.getInstance()
-        locationManager.debug = true
+        locationManager.logLevel = LogLevel.VERBOSE
         locationManager.debugCallback =
             { original, obfuscated -> sendLocationToServer(original, obfuscated) }
     }
@@ -273,20 +275,21 @@ class MainActivity : ComponentActivity() {
 
     @SuppressLint("HardwareIds")
     fun sendLocationToServer(realLocation: LatLonTs, obfuscatedLocation: LatLonTs) {
+        println("sendLocationToServer")
         val jsonBody = JSONObject()
             .put("finePermission", this.locationManager.getFinePermission(false))
             .put("foreGround", this.locationManager.foregroundService)
             .put("priority", this.locationManager.priority)
             .put("user", Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID))
+            .put("timestamp", Date().time)
             .put("realLocation", realLocation)
             .put("obfuscatedLocation", obfuscatedLocation)
         val url = "https://masterproefmilanschollier.azurewebsites.net/location"
         val key = "pendingLocation"
-        println(jsonBody.toString())
         Thread {
-            if (sendToServer(jsonBody, url)) {
+            if (sendToServer(jsonBody, url)){
                 retryPending(this, key, url)
-            } else {
+            }else{
                 savePending(this, key, jsonBody)
             }
         }.start()
@@ -294,6 +297,7 @@ class MainActivity : ComponentActivity() {
 
     @SuppressLint("HardwareIds")
     fun sendBlobsToServer() {
+        println("sendBlobsToServer")
         val jsonBody = JSONObject()
             .put("user", Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID))
             .put(
@@ -302,11 +306,10 @@ class MainActivity : ComponentActivity() {
             )
         val url = "https://masterproefmilanschollier.azurewebsites.net/blobs"
         val key = "pendingBlobs"
-        println(jsonBody.toString())
         Thread {
-            if (sendToServer(jsonBody, url)) {
+            if (sendToServer(jsonBody, url)){
                 retryPending(this, key, url)
-            } else {
+            }else{
                 savePending(this, key, jsonBody)
             }
         }.start()
@@ -335,17 +338,12 @@ class MainActivity : ComponentActivity() {
 
     private fun sendArray(array: JSONArray, url: String): JSONArray {
         val failedArray = JSONArray()
-        val latch = CountDownLatch(array.length())
         for (i in 0 until array.length()) {
             val jsonObject = array.getJSONObject(i)
-            thread {
-                if(!sendToServer(jsonObject, url)){
-                    failedArray.put(jsonObject)
-                }
-                latch.countDown()
-            }.start()
+            if (!sendToServer(jsonObject, url)) {
+                failedArray.put(jsonObject)
+            }
         }
-        latch.await()
         return failedArray
     }
 

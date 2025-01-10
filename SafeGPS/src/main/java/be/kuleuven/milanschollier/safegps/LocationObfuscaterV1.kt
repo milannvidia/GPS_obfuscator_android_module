@@ -27,7 +27,7 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
     }
 
     private var historyBlobs = mutableListOf<PrivacyBlob>()
-    private var _settings: Settings = Pair(100.0, 3_600_000)
+    private var _settings: Settings = Pair(100.0, 600)
     private var settings: Settings
         get() = _settings
         set(value) {
@@ -128,9 +128,18 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
     }
 
     private fun saveHistoryBlobs(file: File) {
-        try {
-            file.writeText(historyBlobs.joinToString("\n") { "${it.first},${it.second},${it.third}" })
 
+        val historyBlobs: Set<PrivacyBlob> = if (file.exists()) {
+            file.readLines().map { line ->
+                val (x, y, radius) = line.split(",").map { it.toDouble() }
+                PrivacyBlob(x, y, radius)
+            }.toSet()
+        } else {
+            emptySet()
+        }
+        val updatedList = historyBlobs.union(this.historyBlobs)
+        try {
+            file.writeText(updatedList.joinToString("\n") { "${it.first},${it.second},${it.third}" })
         } catch (e: IOException) {
             println("Error: ${e.message}")
         }
