@@ -88,19 +88,19 @@ class LocationManager private constructor(private var activity: ComponentActivit
     private var _interval: Long = 1000
     private var _locationObfuscator: LocationObfuscator? = null
     private var _callback: ((LatLonTs) -> Unit)? = null
-    private var _debugCallback: ((LatLonTs, LatLonTs) -> Unit)? = null
+    private var _debugCallback: ((LatLonTs, LatLonTs?) -> Unit)? = null
     private var _logLevel: LogLevel = LogLevel.DEBUG
 
     var foregroundService: Boolean
         get() = _foregroundService
         set(value) {
-            this.logDebug("foregroundService set: $value",LogLevel.VERBOSE)
+            this.logDebug("foregroundService set: $value", LogLevel.VERBOSE)
             _foregroundService = value
         }
     var logLevel: LogLevel
         get() = _logLevel
         set(value) {
-            this.logDebug("logLevel set: ${value.asString()}",LogLevel.VERBOSE)
+            this.logDebug("logLevel set: ${value.asString()}", LogLevel.VERBOSE)
             _logLevel = value
         }
     var priority: Int
@@ -110,84 +110,84 @@ class LocationManager private constructor(private var activity: ComponentActivit
                 Priority.PRIORITY_LOW_POWER != value &&
                 Priority.PRIORITY_BALANCED_POWER_ACCURACY != value &&
                 Priority.PRIORITY_PASSIVE != value
-            ) return
-            this.logDebug("priority set: $value",LogLevel.VERBOSE)
+            ) throw IllegalArgumentException("priority wrong value")
+            this.logDebug("priority set: $value", LogLevel.VERBOSE)
             _priority = value
         }
     var maxRuntime: Long
         get() = _maxRuntime
         set(value) {
-            if (value < 0) return
+            if (value < 0) throw IllegalArgumentException("maxRuntime must be positive")
             var res = value
             if (res > 10 * 60 * 1000) res = 10 * 60 * 1000
-            this.logDebug("maxRuntime set: $res",LogLevel.VERBOSE)
+            this.logDebug("maxRuntime set: $res", LogLevel.VERBOSE)
             _maxRuntime = res
         }
     var interval: Long
         get() = _interval
         set(value) {
-            if (value < 0) return
+            if (value < 0) throw IllegalArgumentException("interval must be positive")
             var res = value
             if (res < 120000 && _finePermission.value == false) res = 120000
 
-            this.logDebug("interval set: $res",LogLevel.VERBOSE)
+            this.logDebug("interval set: $res", LogLevel.VERBOSE)
             _interval = res
         }
     var locationObfuscator: LocationObfuscator?
         get() = _locationObfuscator
         set(value) {
-            this.logDebug("locationObfuscator set",LogLevel.VERBOSE)
+            this.logDebug("locationObfuscator set", LogLevel.VERBOSE)
             _locationObfuscator = value
         }
     var callback: ((LatLonTs) -> Unit)?
         get() = _callback
         set(value) {
-            this.logDebug("callback set",LogLevel.VERBOSE)
+            this.logDebug("callback set", LogLevel.VERBOSE)
             _callback = value
         }
-    var debugCallback: ((LatLonTs, LatLonTs) -> Unit)?
+    var debugCallback: ((LatLonTs, LatLonTs?) -> Unit)?
         get() {
-            return null
+            return _debugCallback
         }
         set(value) {
-            this.logDebug("debugCallback set",LogLevel.VERBOSE)
+            this.logDebug("debugCallback set", LogLevel.VERBOSE)
             _debugCallback = value
         }
 
     override fun onCreate(owner: LifecycleOwner) {
-        this.logDebug("onCreate",LogLevel.VERBOSE)
+        this.logDebug("onCreate", LogLevel.VERBOSE)
         getFinePermission(false)
         getCoarsePermission(false)
     }
 
     override fun onStart(owner: LifecycleOwner) {
-        this.logDebug("onStart",LogLevel.VERBOSE)
+        this.logDebug("onStart", LogLevel.VERBOSE)
     }
 
     override fun onResume(owner: LifecycleOwner) {
-        this.logDebug("onResume",LogLevel.VERBOSE)
+        this.logDebug("onResume", LogLevel.VERBOSE)
     }
 
     override fun onPause(owner: LifecycleOwner) {
-        this.logDebug("onPause",LogLevel.VERBOSE)
+        this.logDebug("onPause", LogLevel.VERBOSE)
     }
 
     override fun onStop(owner: LifecycleOwner) {
-        this.logDebug("onStop",LogLevel.VERBOSE)
+        this.logDebug("onStop", LogLevel.VERBOSE)
         locationObfuscator?.store(activity.filesDir)
     }
 
     override fun onDestroy(owner: LifecycleOwner) {
-        this.logDebug("onDestroy",LogLevel.VERBOSE)
+        this.logDebug("onDestroy", LogLevel.VERBOSE)
     }
 
     fun getFinePermission(askIfNecessary: Boolean = false): Boolean {
-        this.logDebug("getFinePermission",LogLevel.VERBOSE)
+        this.logDebug("getFinePermission", LogLevel.VERBOSE)
         this._finePermission.value = activity.checkSelfPermission(
             Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
         if (this._finePermission.value == true) {
-            this.logDebug("already granted",LogLevel.VERBOSE)
+            this.logDebug("already granted", LogLevel.VERBOSE)
             return true
         }
 
@@ -211,12 +211,12 @@ class LocationManager private constructor(private var activity: ComponentActivit
     }
 
     fun getCoarsePermission(askIfNecessary: Boolean = false): Boolean {
-        this.logDebug("getCoarsePermission",LogLevel.VERBOSE)
+        this.logDebug("getCoarsePermission", LogLevel.VERBOSE)
         this._coarsePermission.value = activity.checkSelfPermission(
             Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
         if (this._coarsePermission.value == true) {
-            this.logDebug("already granted",LogLevel.VERBOSE)
+            this.logDebug("already granted", LogLevel.VERBOSE)
             return true
         }
 
@@ -235,11 +235,12 @@ class LocationManager private constructor(private var activity: ComponentActivit
     }
 
     fun useCallback(location: Location) {
-        this.logDebug("useCallback",LogLevel.VERBOSE)
+        this.logDebug("useCallback", LogLevel.VERBOSE)
         if (_locationObfuscator == null) {
             _callback?.invoke(Triple(location.latitude, location.longitude, location.time))
         } else {
-            val obfuscatedLocation = this._locationObfuscator!!.obfuscateLocation(location)
+            val obfuscatedLocation: LatLonTs? =
+                this._locationObfuscator!!.obfuscateLocation(location)
             _debugCallback?.invoke(
                 Triple(
                     location.latitude,
@@ -247,14 +248,15 @@ class LocationManager private constructor(private var activity: ComponentActivit
                     location.time
                 ), obfuscatedLocation
             )
-            _callback?.invoke(obfuscatedLocation)
+            // no callback if no result
+            obfuscatedLocation?.let { x -> _callback?.invoke(x) }
         }
     }
 
     fun startTracking() {
-        this.logDebug("startTracking",LogLevel.VERBOSE)
+        this.logDebug("startTracking", LogLevel.VERBOSE)
         if (_running.value == true) {
-            this.logDebug("already running, so stopping",LogLevel.INFO)
+            this.logDebug("already running, so stopping", LogLevel.INFO)
             stopTracking()
         }
         if (_callback == null && _debugCallback == null) return
@@ -268,7 +270,7 @@ class LocationManager private constructor(private var activity: ComponentActivit
                 ExistingWorkPolicy.REPLACE,
                 worker
             )
-            this.logDebug("started foreground service",LogLevel.INFO)
+            this.logDebug("started foreground service", LogLevel.INFO)
         } else {
             val worker = PeriodicWorkRequestBuilder<LocationWorker>(
                 max(_interval, MIN_PERIODIC_INTERVAL_MILLIS), TimeUnit.MILLISECONDS
@@ -279,7 +281,7 @@ class LocationManager private constructor(private var activity: ComponentActivit
                 ExistingPeriodicWorkPolicy.UPDATE,
                 worker
             )
-            this.logDebug("started background service",LogLevel.INFO)
+            this.logDebug("started background service", LogLevel.INFO)
         }
         _running.value = true
     }
@@ -300,13 +302,14 @@ class LocationManager private constructor(private var activity: ComponentActivit
     }
 
     fun stopTracking() {
-        this.logDebug("stopTracking",LogLevel.INFO)
+        this.logDebug("stopTracking", LogLevel.INFO)
         WorkManager.getInstance(activity).cancelUniqueWork("location")
         _running.value = false
+        locationObfuscator?.store(activity.filesDir)
     }
 
     fun getLocation(param: (LatLonTs) -> Unit) {
-        this.logDebug("getLocation",LogLevel.INFO)
+        this.logDebug("getLocation", LogLevel.INFO)
         thread {
             if (ActivityCompat.checkSelfPermission(
                     activity,
@@ -318,25 +321,34 @@ class LocationManager private constructor(private var activity: ComponentActivit
                     Manifest.permission.ACCESS_COARSE_LOCATION
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
-                this.logDebug("no permission",LogLevel.ERROR)
+                this.logDebug("no permission", LogLevel.ERROR)
                 return@thread
             }
             val locationClient: FusedLocationProviderClient =
                 LocationServices.getFusedLocationProviderClient(activity)
             val request = locationClient.getCurrentLocation(this.priority, null)
                 .addOnFailureListener { e ->
-                    println(e)
+                    this.logDebug(e.toString(), LogLevel.ERROR)
                 }
             await(request)
-            if (request.result==null){
-                this.logDebug("no location",LogLevel.ERROR)
+            if (request.result == null) {
+                this.logDebug("no location", LogLevel.ERROR)
                 return@thread
             }
-            if (_locationObfuscator == null) {
-                param(Triple(request.result.latitude, request.result.longitude, request.result.time))
+
+            if (this._locationObfuscator == null) {
+                param(
+                    Triple(
+                        request.result.latitude,
+                        request.result.longitude,
+                        request.result.time
+                    )
+                )
             } else {
-                _locationObfuscator?.load(activity.filesDir)
-                param(this._locationObfuscator!!.obfuscateLocation(request.result))
+                this._locationObfuscator!!.load(activity.filesDir)
+                //if null back don't call the callback function
+                this._locationObfuscator!!.obfuscateLocation(request.result)?.let { param(it) }
+                this._locationObfuscator!!.store(activity.filesDir)
             }
         }
     }
@@ -349,7 +361,7 @@ class LocationManager private constructor(private var activity: ComponentActivit
         val timestamp =
             SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
         val logMessage = "$timestamp:${level.asString()}: $message"
-
+        println(logMessage)
         try {
             val logFile = File(this.activity.getExternalFilesDir(null), "app_debug.log")
             FileWriter(logFile, true).buffered().use { fw ->
@@ -362,6 +374,7 @@ class LocationManager private constructor(private var activity: ComponentActivit
         }
     }
 }
+
 enum class LogLevel {
     VERBOSE,
     DEBUG,
@@ -369,6 +382,7 @@ enum class LogLevel {
     WARNING,
     ERROR,
     ASSERT;
+
     fun asString(): String {
         return when (this) {
             VERBOSE -> "VERBOSE"

@@ -9,14 +9,17 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDropDown
@@ -27,14 +30,18 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import be.kuleuven.milanschollier.safegps.LatLonTs
@@ -43,7 +50,6 @@ import be.kuleuven.milanschollier.safegps.LocationObfuscatorV1
 import be.kuleuven.milanschollier.safegps.LogLevel
 import be.kuleuven.milanschollier.testApp.ui.theme.TestAppTheme
 import com.google.android.gms.location.Priority
-import kotlinx.coroutines.CompletableDeferred
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -51,9 +57,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.concurrent.CountDownLatch
-import kotlin.concurrent.thread
+import java.util.Locale
 
 
 class MainActivity : ComponentActivity() {
@@ -72,137 +78,275 @@ class MainActivity : ComponentActivity() {
             { original, obfuscated -> sendLocationToServer(original, obfuscated) }
     }
 
+    @SuppressLint("SimpleDateFormat")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             TestAppTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Column(modifier = Modifier.padding(innerPadding)) {
+                    Column(
+                        modifier = Modifier
+                            .padding(innerPadding)
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         Text(
                             text = "Dit is een app voor mijn thesis het stuurt continue locatie gegevens door. Bij privacy concerns stuur me zeker een vraag",
-                            modifier = Modifier.padding(10.dp)
                         )
-                        var expanded by remember { mutableStateOf(false) }
-                        var prioritySelect by remember { mutableStateOf(priorityOptions.entries.first { it.value == locationManager.priority }.key) }
-                        Box {
-                            Column {
-                                OutlinedTextField(
-                                    value = prioritySelect,
-                                    onValueChange = {},
-                                    trailingIcon = { Icon(Icons.Outlined.ArrowDropDown, null) },
-                                    readOnly = true,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    label = { Text(text = "Priority") }
-                                )
-                                DropdownMenu(
-                                    expanded = expanded,
-                                    onDismissRequest = { expanded = false },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    priorityOptions.keys.forEach { priority ->
-                                        DropdownMenuItem(
-                                            text = { Text(text = priority) },
-                                            onClick = {
-                                                expanded = false
-                                                locationManager.priority =
-                                                    priorityOptions.getValue(priority)
-                                                prioritySelect = priority
-                                            })
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(64.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            var expanded by remember { mutableStateOf(false) }
+                            var prioritySelect by remember { mutableStateOf(priorityOptions.entries.first { it.value == locationManager.priority }.key) }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight(),
+                            ) {
+                                Column {
+                                    OutlinedTextField(
+                                        value = prioritySelect,
+                                        onValueChange = {},
+                                        trailingIcon = { Icon(Icons.Outlined.ArrowDropDown, null) },
+                                        readOnly = true,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .fillMaxHeight(),
+                                        label = { Text(text = "Priority") },
+                                    )
+                                    DropdownMenu(
+                                        expanded = expanded,
+                                        onDismissRequest = { expanded = false },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        priorityOptions.keys.forEach { priority ->
+                                            DropdownMenuItem(
+                                                text = { Text(text = priority) },
+                                                onClick = {
+                                                    expanded = false
+                                                    locationManager.priority =
+                                                        priorityOptions.getValue(priority)
+                                                    prioritySelect = priority
+                                                })
+                                        }
                                     }
                                 }
+                                Spacer(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .background(Color.Transparent)
+                                        .padding(10.dp)
+                                        .clickable(onClick = {
+                                            expanded = !expanded
+                                        })
+                                )
                             }
-                            Spacer(
+                            var foreground by remember { mutableStateOf(locationManager.foregroundService) }
+                            Box(
                                 modifier = Modifier
-                                    .matchParentSize()
-                                    .background(Color.Transparent)
-                                    .padding(10.dp)
-                                    .clickable(onClick = {
-                                        expanded = !expanded
+                                    .weight(1f)
+                                    .fillMaxHeight(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                OutlinedTextField(
+                                    value = foreground.toString(),
+                                    readOnly = true,
+                                    onValueChange = {},
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .fillMaxHeight(),
+                                    label = { Text(text = "foreground") },
+
+                                    )
+                                Spacer(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .background(Color.Transparent)
+                                        .padding(10.dp)
+                                        .clickable(onClick = {
+                                            foreground = !foreground
+                                            locationManager.foregroundService = foreground
+                                        })
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(64.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            var intervalValue by remember { mutableStateOf(locationManager.interval.toString()) }
+                            OutlinedTextField(
+                                value = intervalValue,
+                                onValueChange = { intervalValue = it },
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .weight(1f)
+                                    .onFocusChanged { focusState ->
+                                        if (!focusState.isFocused) {
+                                            try {
+                                                locationManager.interval = intervalValue.toLong()
+                                            } catch (_: Exception) {
+                                            }
+                                            intervalValue = locationManager.interval.toString()
+                                        }
+                                    },
+                                label = { Text(text = "interval ms") },
+                                keyboardOptions = KeyboardOptions.Default.copy(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done
+                                ),
+                                keyboardActions = KeyboardActions(
+                                    onDone = {
+                                        try {
+                                            locationManager.interval = intervalValue.toLong()
+                                        } catch (_: Exception) {
+                                        }
+                                        intervalValue = locationManager.interval.toString()
                                     })
                             )
+                            var maxRuntimeValue by remember { mutableStateOf((locationManager.maxRuntime / (1000 * 60)).toString()) }
+                            OutlinedTextField(
+                                value = maxRuntimeValue,
+                                onValueChange = { maxRuntimeValue = it },
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .weight(1f)
+                                    .onFocusChanged { focusState ->
+                                        if (!focusState.isFocused) {
+                                            try {
+                                                locationManager.maxRuntime =
+                                                    maxRuntimeValue.toLong() * 1000 * 60
+                                            } catch (_: Exception) {
+                                            }
+                                            maxRuntimeValue =
+                                                (locationManager.maxRuntime / (1000 * 60)).toString()
+                                        }
+                                    },
+                                label = { Text(text = "maxRuntime minutes (background)") },
+                                keyboardOptions = KeyboardOptions.Default.copy(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done
+                                ),
+                                keyboardActions = KeyboardActions(
+                                    onDone = {
+                                        try {
+                                            locationManager.maxRuntime =
+                                                maxRuntimeValue.toLong() * 1000 * 60
+                                        } catch (_: Exception) {
+                                        }
+                                        maxRuntimeValue =
+                                            (locationManager.maxRuntime / (1000 * 60)).toString()
+                                    }
+
+                                )
+                            )
                         }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(64.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            var blobRadius by remember { mutableStateOf((locationManager.locationObfuscator as LocationObfuscatorV1).blobRadius.toString()) }
+                            OutlinedTextField(
+                                value = blobRadius,
+                                onValueChange = { blobRadius = it },
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .weight(1f)
+                                    .onFocusChanged { focusState ->
+                                        if (!focusState.isFocused) {
+                                            try {
+                                                (locationManager.locationObfuscator as LocationObfuscatorV1).blobRadius =
+                                                    blobRadius.toDouble()
+                                            } catch (_: Exception) {
+                                            }
+                                            blobRadius =
+                                                (locationManager.locationObfuscator as LocationObfuscatorV1).blobRadius.toString()
+                                        }
+                                    },
+                                label = { Text(text = "Blob radius") },
+                                keyboardOptions = KeyboardOptions.Default.copy(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done
+                                ),
+                                keyboardActions = KeyboardActions(
+                                    onDone = {
+                                        try {
+                                            (locationManager.locationObfuscator as LocationObfuscatorV1).blobRadius =
+                                                blobRadius.toDouble()
+                                        } catch (_: Exception) {
+                                        }
+                                        blobRadius =
+                                            (locationManager.locationObfuscator as LocationObfuscatorV1).blobRadius.toString()
+                                    })
+                            )
+                            var deltaTime by remember { mutableStateOf((locationManager.locationObfuscator as LocationObfuscatorV1).deltaTime.toString()) }
+                            OutlinedTextField(
+                                value = deltaTime,
+                                onValueChange = { deltaTime = it },
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .weight(1f)
+                                    .onFocusChanged { focusState ->
+                                        if (!focusState.isFocused) {
+                                            try {
+                                                (locationManager.locationObfuscator as LocationObfuscatorV1).deltaTime =
+                                                    deltaTime.toLong()
+                                            } catch (_: Exception) {
+                                            }
+                                            deltaTime =
+                                                (locationManager.locationObfuscator as LocationObfuscatorV1).deltaTime.toString()
+                                        }
+                                    },
+                                label = { Text(text = "Time between privacy") },
+                                keyboardOptions = KeyboardOptions.Default.copy(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done
+                                ),
+                                keyboardActions = KeyboardActions(
+                                    onDone = {
+                                        try {
+                                            (locationManager.locationObfuscator as LocationObfuscatorV1).deltaTime =
+                                                deltaTime.toLong()
+                                        } catch (_: Exception) {
+                                        }
+                                        deltaTime =
+                                            (locationManager.locationObfuscator as LocationObfuscatorV1).deltaTime.toString()
+                                    })
+
+                            )
+                        }
+
                         val finePermission = locationManager.finePermission.observeAsState()
                         val coarsePermission = locationManager.coarsePermission.observeAsState()
-                        var intervalValue by remember { mutableStateOf(locationManager.interval.toString()) }
-                        OutlinedTextField(
-                            value = intervalValue,
-
-                            onValueChange = {
-                                val x: Long
-                                try {
-                                    x = it.toLong()
-                                } catch (e: NumberFormatException) {
-                                    intervalValue = 0L.toString()
-                                    locationManager.interval = 0
-                                    return@OutlinedTextField
-                                }
-                                locationManager.interval = x
-                                intervalValue = locationManager.interval.toString()
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text(text = "interval ms") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        )
-                        var maxRuntimeValue by remember { mutableStateOf((locationManager.maxRuntime / (1000 * 60)).toString()) }
-                        OutlinedTextField(
-                            value = maxRuntimeValue,
-                            onValueChange = {
-                                val x: Long
-                                try {
-                                    x = it.toLong() * 1000 * 60
-                                } catch (e: NumberFormatException) {
-                                    maxRuntimeValue = 0L.toString()
-                                    locationManager.maxRuntime = 0
-                                    return@OutlinedTextField
-                                }
-                                locationManager.maxRuntime = x
-                                maxRuntimeValue =
-                                    (locationManager.maxRuntime / (1000 * 60)).toString()
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text(text = "maxRuntime minutes (background)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        )
-                        var foreground by remember { mutableStateOf(locationManager.foregroundService) }
-                        Box {
-                            OutlinedTextField(
-                                value = foreground.toString(),
-                                readOnly = true,
-                                onValueChange = {},
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text(text = "foreground") }
-                            )
-                            Spacer(
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .background(Color.Transparent)
-                                    .padding(10.dp)
-                                    .clickable(onClick = {
-                                        foreground = !foreground
-                                        locationManager.foregroundService = foreground
-                                    })
-                            )
-                        }
-                        OutlinedTextField(
-                            value = "finePermission: ${finePermission.value} coarsePermission: ${coarsePermission.value}",
-                            onValueChange = {},
-                            readOnly = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text(text = "Permissionstate") },
-                        )
-
-                        Row {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(64.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Button(
                                 onClick = {
                                     locationManager.getCoarsePermission(true)
                                 },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .heightIn(64.dp, 64.dp),
+                                    .fillMaxSize(),
                                 enabled = coarsePermission.value == false
                             ) {
-                                Text(text = "Ask Coarse Permission")
+                                Text(text = if (coarsePermission.value == true) "Coarse permission granted" else "Ask Coarse Permission")
                             }
                             Button(
                                 onClick = {
@@ -210,14 +354,20 @@ class MainActivity : ComponentActivity() {
                                 },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .heightIn(64.dp, 64.dp),
+                                    .fillMaxSize(),
                                 enabled = finePermission.value == false
                             ) {
-                                Text(text = "Ask Fine Permission")
+                                Text(text = if (finePermission.value == true) "Fine permission granted" else "Ask Fine Permission")
                             }
                         }
                         var results by remember { mutableStateOf("") }
-                        Row {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(64.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             val running = locationManager.running.observeAsState()
                             Button(
                                 onClick = {
@@ -228,19 +378,19 @@ class MainActivity : ComponentActivity() {
                                 },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .heightIn(64.dp, 64.dp)
+                                    .fillMaxSize()
                             ) {
                                 Text(text = if (running.value == true) "Stop tracking" else "Start tracking")
                             }
                             Button(
                                 onClick = {
-                                    locationManager.getLocation { x ->
-                                        results += "${x.first}, ${x.second}, ${Date(x.third)}\n"
+                                    locationManager.getLocation { res ->
+                                        results += locationToString(res)
                                     }
                                 },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .heightIn(64.dp, 64.dp)
+                                    .fillMaxSize()
                             ) {
                                 Text(text = "Get location")
                             }
@@ -248,7 +398,7 @@ class MainActivity : ComponentActivity() {
 
                         LaunchedEffect(LocationManager) {
                             locationManager.callback = { location ->
-                                results += "${location.first}, ${location.second}, ${Date(location.third)} \n"
+                                results += locationToString(location)
                             }
                         }
                         OutlinedTextField(
@@ -269,12 +419,34 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
+
+    fun locationToString(location: LatLonTs): String {
+        val xDegrees = location.first.toLong()
+        val xMinutes = (location.first - xDegrees) * 60
+        val xMinutesDegrees = xMinutes.toLong()
+        val xSeconds = (xMinutes - xMinutesDegrees) * 60
+
+        val yDegrees = location.second.toLong()
+        val yMinutes = (location.second - yDegrees) * 60
+        val yMinutesDegrees = yMinutes.toLong()
+        val ySeconds = (yMinutes - yMinutesDegrees) * 60
+
+        var row = "${
+            SimpleDateFormat(
+                "yyyy-MM-dd HH:mm:ss",
+                Locale.getDefault()
+            ).format(Date(location.third))
+        }}"
+        row += " ${xDegrees}° ${xMinutesDegrees}' ${String.format("%.2f", xSeconds)}\""
+        row += " ${yDegrees}° ${yMinutesDegrees}' ${String.format("%.2f", ySeconds)}\""
+        return row
+    }
     //=================================================================================================================================================================
     // IO
     //=================================================================================================================================================================
 
     @SuppressLint("HardwareIds")
-    fun sendLocationToServer(realLocation: LatLonTs, obfuscatedLocation: LatLonTs) {
+    fun sendLocationToServer(realLocation: LatLonTs, obfuscatedLocation: LatLonTs?) {
         println("sendLocationToServer")
         val jsonBody = JSONObject()
             .put("finePermission", this.locationManager.getFinePermission(false))
@@ -284,13 +456,16 @@ class MainActivity : ComponentActivity() {
             .put("timestamp", Date().time)
             .put("realLocation", realLocation)
             .put("obfuscatedLocation", obfuscatedLocation)
+        println(jsonBody)
         val url = "https://masterproefmilanschollier.azurewebsites.net/location"
         val key = "pendingLocation"
         Thread {
-            if (sendToServer(jsonBody, url)){
+            if (sendToServer(jsonBody, url)) {
                 retryPending(this, key, url)
-            }else{
+                locationManager.logDebug("retryPending", LogLevel.VERBOSE)
+            } else {
                 savePending(this, key, jsonBody)
+                locationManager.logDebug("savePending", LogLevel.VERBOSE)
             }
         }.start()
     }
@@ -307,9 +482,9 @@ class MainActivity : ComponentActivity() {
         val url = "https://masterproefmilanschollier.azurewebsites.net/blobs"
         val key = "pendingBlobs"
         Thread {
-            if (sendToServer(jsonBody, url)){
+            if (sendToServer(jsonBody, url)) {
                 retryPending(this, key, url)
-            }else{
+            } else {
                 savePending(this, key, jsonBody)
             }
         }.start()
@@ -321,7 +496,7 @@ class MainActivity : ComponentActivity() {
         val array = JSONArray(pending)
         val editor = sharedPreferences.edit()
         array.put(jsonBody)
-        println(array.toString())
+        locationManager.logDebug("saved: ${array.length()} in file", LogLevel.DEBUG)
         editor.putString(key, array.toString())
         editor.apply()
     }
@@ -330,7 +505,9 @@ class MainActivity : ComponentActivity() {
         val sharedPreferences = context.getSharedPreferences(key, Context.MODE_PRIVATE)
         val pending = sharedPreferences.getString(key, "[]")
         val array = JSONArray(pending)
+        if (array.length() == 0) return
         val failedArray = sendArray(array, url)
+        locationManager.logDebug("retried with ${array.length()}, ${failedArray.length()} failed", LogLevel.DEBUG)
         val editor = sharedPreferences.edit()
         editor.putString(key, failedArray.toString())
         editor.apply()
