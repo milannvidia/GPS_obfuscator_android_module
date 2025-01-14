@@ -30,7 +30,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
@@ -420,7 +419,7 @@ class MainActivity : ComponentActivity() {
     }
 
 
-    fun locationToString(location: LatLonTs): String {
+    private fun locationToString(location: LatLonTs): String {
         val xDegrees = location.first.toLong()
         val xMinutes = (location.first - xDegrees) * 60
         val xMinutesDegrees = xMinutes.toLong()
@@ -431,12 +430,10 @@ class MainActivity : ComponentActivity() {
         val yMinutesDegrees = yMinutes.toLong()
         val ySeconds = (yMinutes - yMinutesDegrees) * 60
 
-        var row = "${
-            SimpleDateFormat(
-                "yyyy-MM-dd HH:mm:ss",
-                Locale.getDefault()
-            ).format(Date(location.third))
-        }}"
+        var row = SimpleDateFormat(
+            "yyyy-MM-dd HH:mm:ss",
+            Locale.getDefault()
+        ).format(Date(location.third))
         row += " ${xDegrees}° ${xMinutesDegrees}' ${String.format("%.2f", xSeconds)}\""
         row += " ${yDegrees}° ${yMinutesDegrees}' ${String.format("%.2f", ySeconds)}\""
         return row

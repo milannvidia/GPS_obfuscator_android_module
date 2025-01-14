@@ -86,11 +86,17 @@ class LocationManager private constructor(private var activity: ComponentActivit
     private var _priority: Int = Priority.PRIORITY_HIGH_ACCURACY
     private var _maxRuntime: Long = 10 * 60 * 1000
     private var _interval: Long = 1000
+    private var _intervalWorker: Long = MIN_PERIODIC_INTERVAL_MILLIS
     private var _locationObfuscator: LocationObfuscator? = null
     private var _callback: ((LatLonTs) -> Unit)? = null
     private var _debugCallback: ((LatLonTs, LatLonTs?) -> Unit)? = null
     private var _logLevel: LogLevel = LogLevel.DEBUG
 
+    var intervalWorker: Long
+        get() = _intervalWorker
+        set(value) {
+            _intervalWorker = max(value, MIN_PERIODIC_INTERVAL_MILLIS)
+        }
     var foregroundService: Boolean
         get() = _foregroundService
         set(value) {
@@ -174,7 +180,7 @@ class LocationManager private constructor(private var activity: ComponentActivit
 
     override fun onStop(owner: LifecycleOwner) {
         this.logDebug("onStop", LogLevel.VERBOSE)
-        locationObfuscator?.store(activity.filesDir)
+        _locationObfuscator?.store(activity.filesDir)
     }
 
     override fun onDestroy(owner: LifecycleOwner) {
@@ -273,7 +279,7 @@ class LocationManager private constructor(private var activity: ComponentActivit
             this.logDebug("started foreground service", LogLevel.INFO)
         } else {
             val worker = PeriodicWorkRequestBuilder<LocationWorker>(
-                max(_interval, MIN_PERIODIC_INTERVAL_MILLIS), TimeUnit.MILLISECONDS
+                _intervalWorker, TimeUnit.MILLISECONDS
             )
                 .build()
             WorkManager.getInstance(activity).enqueueUniquePeriodicWork(
@@ -305,7 +311,7 @@ class LocationManager private constructor(private var activity: ComponentActivit
         this.logDebug("stopTracking", LogLevel.INFO)
         WorkManager.getInstance(activity).cancelUniqueWork("location")
         _running.value = false
-        locationObfuscator?.store(activity.filesDir)
+        _locationObfuscator?.store(activity.filesDir)
     }
 
     fun getLocation(param: (LatLonTs) -> Unit) {
@@ -326,7 +332,7 @@ class LocationManager private constructor(private var activity: ComponentActivit
             }
             val locationClient: FusedLocationProviderClient =
                 LocationServices.getFusedLocationProviderClient(activity)
-            val request = locationClient.getCurrentLocation(this.priority, null)
+            val request = locationClient.getCurrentLocation(this._priority, null)
                 .addOnFailureListener { e ->
                     this.logDebug(e.toString(), LogLevel.ERROR)
                 }
@@ -356,7 +362,7 @@ class LocationManager private constructor(private var activity: ComponentActivit
     fun logDebug(message: String, level: LogLevel) {
 
 
-        if (level.asPriority() >= this.logLevel.asPriority()) Log.d(level.asString(), message)
+        if (level.asPriority() >= this._logLevel.asPriority()) Log.d(level.asString(), message)
         if (level.asPriority() <= LogLevel.DEBUG.asPriority()) return
         val timestamp =
             SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
