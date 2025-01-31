@@ -3,7 +3,7 @@ package be.kuleuven.milanschollier.testApp
 import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Bundle
-import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -59,17 +59,26 @@ import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 
 class MainActivity : ComponentActivity() {
     private val locationManager = LocationManager.getInstance(this)
+
+    private val url = "https://masterproefmilanschollier.azurewebsites.net"
     private val priorityOptions = hashMapOf(
         "High Accuracy" to Priority.PRIORITY_HIGH_ACCURACY,
         "Balanced Power Accuracy" to Priority.PRIORITY_BALANCED_POWER_ACCURACY,
         "Low Power" to Priority.PRIORITY_LOW_POWER,
         "Passive" to Priority.PRIORITY_PASSIVE
     )
-
+    private val client = OkHttpClient()
+        .newBuilder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(10, TimeUnit.SECONDS)
+        .build()
     init {
         locationManager.locationObfuscator = LocationObfuscatorV1.getInstance()
         locationManager.logLevel = LogLevel.VERBOSE
@@ -359,6 +368,37 @@ class MainActivity : ComponentActivity() {
                                 Text(text = if (finePermission.value == true) "Fine permission granted" else "Ask Fine Permission")
                             }
                         }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(64.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+
+                            Button(
+                                onClick = {
+                                    locationManager.locationObfuscator?.clearStorage(this@MainActivity.filesDir)
+                                    Toast.makeText(this@MainActivity, "Storage cleared", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxSize()
+                            ) {
+                                Text(text = "clear obfuscator storage")
+                            }
+                            Button(
+                                onClick = {
+                                    this@MainActivity.newUUID()
+
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxSize()
+                            ) {
+                                Text(text = "Get new UUID")
+                            }
+                        }
                         var results by remember { mutableStateOf("") }
                         Row(
                             modifier = Modifier
@@ -370,7 +410,10 @@ class MainActivity : ComponentActivity() {
                             val running = locationManager.running.observeAsState()
                             Button(
                                 onClick = {
-                                    if (running.value == true) locationManager.stopTracking()
+                                    if (running.value == true) {
+                                        locationManager.stopTracking()
+                                        sendBlobsToServer()
+                                    }
                                     else {
                                         locationManager.startTracking()
                                     }
@@ -418,7 +461,7 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
-
+    @SuppressLint("DefaultLocale")
     private fun locationToString(location: LatLonTs): String {
         val xDegrees = location.first.toLong()
         val xMinutes = (location.first - xDegrees) * 60
@@ -442,53 +485,77 @@ class MainActivity : ComponentActivity() {
     // IO
     //=================================================================================================================================================================
 
-    @SuppressLint("HardwareIds")
-    fun sendLocationToServer(realLocation: LatLonTs, obfuscatedLocation: LatLonTs?) {
+    private fun sendLocationToServer(realLocation: LatLonTs, obfuscatedLocation: LatLonTs?) {
         println("sendLocationToServer")
         val jsonBody = JSONObject()
             .put("finePermission", this.locationManager.getFinePermission(false))
             .put("foreGround", this.locationManager.foregroundService)
             .put("priority", this.locationManager.priority)
-            .put("user", Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID))
+            .put("uuid", this.getUUID().toString())
             .put("timestamp", Date().time)
             .put("realLocation", realLocation)
             .put("obfuscatedLocation", obfuscatedLocation)
         println(jsonBody)
-        val url = "https://masterproefmilanschollier.azurewebsites.net/location"
+        val href = "location"
         val key = "pendingLocation"
         Thread {
-            if (sendToServer(jsonBody, url)) {
-                retryPending(this, key, url)
+            if (sendToServer(jsonBody, href)) {
+                retryPending(key, href)
                 locationManager.logDebug("retryPending", LogLevel.VERBOSE)
             } else {
-                savePending(this, key, jsonBody)
+                savePending(key, jsonBody)
                 locationManager.logDebug("savePending", LogLevel.VERBOSE)
             }
         }.start()
     }
 
-    @SuppressLint("HardwareIds")
-    fun sendBlobsToServer() {
+    private fun sendBlobsToServer() {
         println("sendBlobsToServer")
         val jsonBody = JSONObject()
-            .put("user", Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID))
+            .put("uuid", this.getUUID().toString())
+            .put("timestamp", Date().time)
             .put(
                 "blobs",
                 (locationManager.locationObfuscator as LocationObfuscatorV1).getHistoryBlobs()
             )
-        val url = "https://masterproefmilanschollier.azurewebsites.net/blobs"
+        val href = "blobs"
         val key = "pendingBlobs"
         Thread {
-            if (sendToServer(jsonBody, url)) {
-                retryPending(this, key, url)
+            if (sendToServer(jsonBody, href)) {
+                retryPending(key, href)
+                locationManager.logDebug("retryPendingBlobs", LogLevel.VERBOSE)
             } else {
-                savePending(this, key, jsonBody)
+                savePending(key, jsonBody)
+                locationManager.logDebug("savePendingBlobs", LogLevel.VERBOSE)
             }
         }.start()
     }
 
-    private fun savePending(context: Context, key: String, jsonBody: JSONObject) {
-        val sharedPreferences = context.getSharedPreferences(key, Context.MODE_PRIVATE)
+    //=================================================================================================================================================================
+    // uuid
+    //=================================================================================================================================================================
+
+    private fun getUUID(): UUID {
+        val sharedPreferences = this.getSharedPreferences("uuid", Context.MODE_PRIVATE)
+        val pending = sharedPreferences.getString("uuid", null)
+        return if (pending != null) UUID.fromString(pending) else newUUID()
+    }
+
+    private fun newUUID():UUID {
+        val uuid = UUID.randomUUID()
+        val sharedPreferences = this.getSharedPreferences("uuid", Context.MODE_PRIVATE)
+        val editor = sharedPreferences.edit()
+        editor.putString("uuid", uuid.toString())
+        editor.apply()
+        Toast.makeText(this@MainActivity, "new UUID saved $uuid", Toast.LENGTH_SHORT).show()
+        return uuid
+    }
+
+    //=================================================================================================================================================================
+    // permanent storage sending to server
+    //=================================================================================================================================================================
+    private fun savePending(key: String, jsonBody: JSONObject) {
+        val sharedPreferences = this.getSharedPreferences(key, Context.MODE_PRIVATE)
         val pending = sharedPreferences.getString(key, "[]")
         val array = JSONArray(pending)
         val editor = sharedPreferences.edit()
@@ -498,43 +565,47 @@ class MainActivity : ComponentActivity() {
         editor.apply()
     }
 
-    private fun retryPending(context: Context, key: String, url: String) {
-        val sharedPreferences = context.getSharedPreferences(key, Context.MODE_PRIVATE)
+    private fun retryPending(key: String, href: String) {
+        val sharedPreferences = this.getSharedPreferences(key, Context.MODE_PRIVATE)
         val pending = sharedPreferences.getString(key, "[]")
         val array = JSONArray(pending)
         if (array.length() == 0) return
-        val failedArray = sendArray(array, url)
-        locationManager.logDebug("retried with ${array.length()}, ${failedArray.length()} failed", LogLevel.DEBUG)
+        val failedArray = sendArray(array, href)
+        locationManager.logDebug(
+            "retried with ${array.length()}, ${failedArray.length()} failed",
+            LogLevel.DEBUG
+        )
         val editor = sharedPreferences.edit()
         editor.putString(key, failedArray.toString())
         editor.apply()
     }
 
-    private fun sendArray(array: JSONArray, url: String): JSONArray {
+    private fun sendArray(array: JSONArray, href: String): JSONArray {
         val failedArray = JSONArray()
         for (i in 0 until array.length()) {
             val jsonObject = array.getJSONObject(i)
-            if (!sendToServer(jsonObject, url)) {
+            if (!sendToServer(jsonObject, href)) {
                 failedArray.put(jsonObject)
             }
         }
         return failedArray
     }
 
-    private fun sendToServer(jsonBody: JSONObject, url: String): Boolean {
-        try {
-            val client = OkHttpClient()
-            val request = Request.Builder()
-                .url(url)
-                .post(
-                    jsonBody.toString()
-                        .toRequestBody("application/json;charset=utf-8".toMediaTypeOrNull())
-                )
-                .build()
-            val response = client.newCall(request).execute()
-            return response.isSuccessful
+    private fun sendToServer(jsonBody: JSONObject, href: String): Boolean {
+
+        val request = Request.Builder()
+            .url("$url/$href")
+            .post(
+                jsonBody.toString()
+                    .toRequestBody("application/json;charset=utf-8".toMediaTypeOrNull())
+            )
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
         } catch (e: IOException) {
-            return false
+            false
         }
     }
 }
