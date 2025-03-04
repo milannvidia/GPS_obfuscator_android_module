@@ -34,6 +34,7 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
         set(value) {
             if (value < 0) throw IllegalArgumentException("Blob radius cannot be negative")
             _blobRadius = value
+            println("Blob radius set to $value")
         }
     var deltaTime: Long
         get() = _deltaTime
@@ -67,6 +68,7 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
             val sampledAngle = Math.toDegrees(angleSampler())
             val res = Geodesic.WGS84.Direct(lat, lon, sampledAngle, sampledRadius)
             blob = PrivacyBlob(res.lat2, res.lon2, _blobRadius)
+            println("Generated new privacy blob: $blob")
             historyBlobs.add(blob)
         } else {
             blob = matchedReports.minBy { report ->
@@ -106,12 +108,10 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
 
     override fun load(filesDir: File) {
         updateHistoryBlobs(File(filesDir, "LocationObfuscatorV1_historyBlobs.txt"))
-        loadSettings(File(filesDir, "LocationObfuscatorV1_settings.txt"))
     }
 
     override fun store(filesDir: File) {
         updateHistoryBlobs(File(filesDir, "LocationObfuscatorV1_historyBlobs.txt"))
-        saveSettings(File(filesDir, "LocationObfuscatorV1_settings.txt"))
     }
 
     override fun clearStorage(filesDir: File) {
@@ -126,13 +126,17 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
                 val (x, y, radius) = line.split(",").map { it.toDouble() }
                 PrivacyBlob(x, y, radius)
             }.toSet()
+
         } else {
             emptySet()
         }
+        println("Loaded $historyBlobs privacy blobs from file")
         val updatedList = historyBlobs.union(this.historyBlobs)
+        println("Loaded $updatedList privacy blobs from file")
 
         this.historyBlobs.clear()
         this.historyBlobs.addAll(updatedList)
+        println("Loaded ${this.historyBlobs} privacy blobs from file")
         try {
             file.writeText(updatedList.joinToString("\n") { "${it.first},${it.second},${it.third}" })
         } catch (e: IOException) {
@@ -142,25 +146,5 @@ class LocationObfuscatorV1 private constructor() : LocationObfuscator {
 
     fun getHistoryBlobs(): List<PrivacyBlob> {
         return historyBlobs.map { it.copy() }
-    }
-
-    private fun loadSettings(file: File) {
-        if (file.exists()) {
-            val (radius, interval) = file.readText().split(",")
-            _blobRadius = radius.toDouble()
-            _deltaTime = interval.toLong()
-        } else {
-            _blobRadius = 100.0
-            _deltaTime = 600
-            saveSettings(file)
-        }
-    }
-
-    private fun saveSettings(file: File) {
-        try {
-            file.writeText("${_blobRadius},${_deltaTime}")
-        } catch (e: IOException) {
-            println("Error: ${e.message}")
-        }
     }
 }
